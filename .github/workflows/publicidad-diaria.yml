@@ -30,6 +30,7 @@ jobs:
         run: |
           git config user.name "Las 3 Yemas Bot"
           git config user.email "bot@las3yemas.cl"
+
           git add publicidad/instagram-${GITHUB_RUN_ID}.jpg
           git commit -m "Nueva publicidad Instagram" || true
           git push
