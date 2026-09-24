@@ -43,13 +43,37 @@ jobs:
           git diff --cached --quiet || git commit -m "Publicidad automática"
           git push
 
+      - name: Esperar imagen pública
+        run: |
+          IMAGE_URL="https://raw.githubusercontent.com/las3yemas-glitch/las3yemas/main/publicidad/publicidad-hoy.jpg"
+
+          echo "Esperando que la imagen esté disponible públicamente..."
+
+          for i in {1..12}; do
+            STATUS=$(curl -L -s -o /dev/null -w "%{http_code}" "$IMAGE_URL")
+
+            echo "Intento $i: HTTP $STATUS"
+
+            if [ "$STATUS" = "200" ]; then
+              echo "Imagen disponible."
+              exit 0
+            fi
+
+            sleep 5
+          done
+
+          echo "La imagen todavía no está disponible públicamente."
+          exit 1
+
       - name: Publicar en Instagram
         env:
           ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
         run: |
           IMAGE_URL="https://raw.githubusercontent.com/las3yemas-glitch/las3yemas/main/publicidad/publicidad-hoy.jpg"
 
-          IG_USER_ID=$(curl -s "https://graph.instagram.com/me?fields=id&access_token=${ACCESS_TOKEN}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
+          IG_USER_ID=$(curl -s \
+            "https://graph.instagram.com/me?fields=id&access_token=${ACCESS_TOKEN}" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
 
           if [ -z "$IG_USER_ID" ]; then
             echo "No se pudo obtener el usuario de Instagram."
