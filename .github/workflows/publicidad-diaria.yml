@@ -14,7 +14,7 @@ jobs:
       - name: Descargar repositorio
         uses: actions/checkout@v4
 
-      - name: Preparar publicidad
+      - name: Preparar publicidad rosa
         run: |
           sudo apt-get update
           sudo apt-get install -y imagemagick
@@ -22,47 +22,51 @@ jobs:
           mkdir -p publicidad
 
           convert publicidad/plantilla-las3yemas.png \
+            -resize 1080x1350! \
             -quality 95 \
-            publicidad/publicidad-${GITHUB_RUN_ID}.jpg
+            publicidad/instagram-${GITHUB_RUN_ID}.jpg
 
-          file publicidad/publicidad-${GITHUB_RUN_ID}.jpg
-          ls -lh publicidad/publicidad-${GITHUB_RUN_ID}.jpg
+          echo "NUEVA IMAGEN CREADA:"
+          file publicidad/instagram-${GITHUB_RUN_ID}.jpg
+          ls -lh publicidad/instagram-${GITHUB_RUN_ID}.jpg
 
-      - name: Guardar publicidad
+      - name: Guardar nueva imagen
         run: |
           git config user.name "Las 3 Yemas Bot"
           git config user.email "bot@las3yemas.cl"
-          git add publicidad/publicidad-${GITHUB_RUN_ID}.jpg
-          git commit -m "Publicidad Las 3 Yemas ${GITHUB_RUN_ID}" || true
+
+          git add publicidad/instagram-${GITHUB_RUN_ID}.jpg
+          git commit -m "Nueva publicidad Instagram ${GITHUB_RUN_ID}" || true
           git push
 
       - name: Esperar imagen pública
         run: |
-          IMAGE_URL="https://las3yemas-glitch.github.io/las3yemas/publicidad/publicidad-${GITHUB_RUN_ID}.jpg"
+          IMAGE_URL="https://las3yemas-glitch.github.io/las3yemas/publicidad/instagram-${GITHUB_RUN_ID}.jpg"
 
-          echo "Esperando imagen..."
+          echo "URL NUEVA:"
           echo "$IMAGE_URL"
 
           for i in {1..30}; do
             STATUS=$(curl -L -s -o /dev/null -w "%{http_code}" "$IMAGE_URL")
+
             echo "Intento $i: HTTP $STATUS"
 
             if [ "$STATUS" = "200" ]; then
-              echo "IMAGEN DISPONIBLE."
+              echo "IMAGEN NUEVA DISPONIBLE."
               exit 0
             fi
 
             sleep 5
           done
 
-          echo "La imagen no quedó disponible."
+          echo "La imagen nueva no quedó disponible."
           exit 1
 
       - name: Publicar en Instagram
         env:
           ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
         run: |
-          IMAGE_URL="https://las3yemas-glitch.github.io/las3yemas/publicidad/publicidad-${GITHUB_RUN_ID}.jpg"
+          IMAGE_URL="https://las3yemas-glitch.github.io/las3yemas/publicidad/instagram-${GITHUB_RUN_ID}.jpg"
 
           IG_USER_ID=$(curl -s \
             "https://graph.instagram.com/me?fields=id&access_token=${ACCESS_TOKEN}" \
@@ -106,4 +110,4 @@ jobs:
             exit 1
           fi
 
-          echo "PUBLICACIÓN REALIZADA CORRECTAMENTE."
+          echo "PUBLICACIÓN NUEVA REALIZADA CORRECTAMENTE."
