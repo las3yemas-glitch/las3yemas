@@ -9,36 +9,130 @@ permissions:
   contents: write
 
 jobs:
-  generar-publicidad:
+  publicar-instagram:
     runs-on: ubuntu-latest
 
     steps:
       - name: Descargar repositorio
         uses: actions/checkout@v4
 
-      - name: Crear publicidad del día
+      - name: Instalar herramientas
         run: |
-          FECHA=$(date +'%d-%m-%Y')
+          sudo apt-get update
+          sudo apt-get install -y imagemagick
+
+      - name: Crear pieza publicitaria
+        run: |
           mkdir -p publicidad
 
-          cat > publicidad/publicidad-hoy.md << EOF
-          # 🥚 Las 3 Yemas
-          Fecha: $FECHA
+          FECHA=$(date +'%d-%m-%Y')
 
-          🥚 Huevos frescos directo a tu hogar.
-
-          🚚 Repartimos en:
-          Viña del Mar · Valparaíso · Quilpué · Belloto · Villa Alemana
-
-          📲 Haz tu pedido por WhatsApp o desde nuestra web.
-
-          #Las3Yemas #HuevosFrescos #ViñaDelMar #Valparaiso #Quilpue
+          cat > publicidad/publicidad.svg <<EOF
+          <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350">
+            <rect width="1080" height="1350" fill="#fff8e8"/>
+            <text x="540" y="230"
+                  text-anchor="middle"
+                  font-family="Arial"
+                  font-size="82"
+                  font-weight="bold"
+                  fill="#5b3518">LAS 3 YEMAS</text>
+            <text x="540" y="360"
+                  text-anchor="middle"
+                  font-family="Arial"
+                  font-size="58"
+                  fill="#5b3518">🥚 Huevos frescos</text>
+            <text x="540" y="460"
+                  text-anchor="middle"
+                  font-family="Arial"
+                  font-size="42"
+                  fill="#5b3518">Directo a tu hogar</text>
+            <text x="540" y="700"
+                  text-anchor="middle"
+                  font-family="Arial"
+                  font-size="48"
+                  fill="#5b3518">🚚 Repartimos en</text>
+            <text x="540" y="790"
+                  text-anchor="middle"
+                  font-family="Arial"
+                  font-size="38"
+                  fill="#5b3518">Viña del Mar · Valparaíso</text>
+            <text x="540" y="850"
+                  text-anchor="middle"
+                  font-family="Arial"
+                  font-size="38"
+                  fill="#5b3518">Quilpué · Belloto · Villa Alemana</text>
+            <text x="540" y="1080"
+                  text-anchor="middle"
+                  font-family="Arial"
+                  font-size="48"
+                  font-weight="bold"
+                  fill="#7a421b">📲 Pide por WhatsApp o nuestra web</text>
+            <text x="540" y="1210"
+                  text-anchor="middle"
+                  font-family="Arial"
+                  font-size="28"
+                  fill="#7a421b">Las 3 Yemas · $FECHA</text>
+          </svg>
           EOF
 
-      - name: Guardar publicidad
+          convert publicidad/publicidad.svg publicidad/publicidad-hoy.jpg
+
+      - name: Guardar pieza
         run: |
           git config user.name "Las 3 Yemas Bot"
           git config user.email "bot@las3yemas.cl"
-          git add publicidad/publicidad-hoy.md
+          git add publicidad/
           git diff --cached --quiet || git commit -m "Publicidad diaria automática"
           git push
+
+      - name: Esperar publicación del archivo
+        run: sleep 15
+
+      - name: Publicar en Instagram
+        env:
+          ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          APP_ID: ${{ secrets.INSTAGRAM_APP_ID }}
+          APP_SECRET: ${{ secrets.INSTAGRAM_APP_SECRET }}
+        run: |
+          IMAGE_URL="https://raw.githubusercontent.com/las3yemas-glitch/las3yemas/main/publicidad/publicidad-hoy.jpg"
+
+          IG_USER_ID=$(curl -s \
+            "https://graph.instagram.com/me?fields=id,username&access_token=${ACCESS_TOKEN}" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
+
+          if [ -z "$IG_USER_ID" ]; then
+            echo "No se pudo obtener el ID de Instagram."
+            exit 1
+          fi
+
+          echo "Cuenta Instagram detectada: $IG_USER_ID"
+
+          RESPONSE=$(curl -s -X POST \
+            "https://graph.instagram.com/${IG_USER_ID}/media" \
+            -d "image_url=${IMAGE_URL}" \
+            -d "caption=🥚 Huevos frescos directo a tu hogar.
+
+🚚 Repartimos en Viña del Mar, Valparaíso, Quilpué, Belloto y Villa Alemana.
+
+📲 Haz tu pedido por WhatsApp o desde nuestra web.
+
+#Las3Yemas #HuevosFrescos #ViñaDelMar #Valparaiso #Quilpue" \
+            -d "access_token=${ACCESS_TOKEN}")
+
+          echo "$RESPONSE"
+
+          CREATION_ID=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
+
+          if [ -z "$CREATION_ID" ]; then
+            echo "Instagram no creó el contenido."
+            exit 1
+          fi
+
+          sleep 10
+
+          curl -s -X POST \
+            "https://graph.instagram.com/${IG_USER_ID}/media_publish" \
+            -d "creation_id=${CREATION_ID}" \
+            -d "access_token=${ACCESS_TOKEN}"
+
+          echo "Publicación enviada a Instagram."
