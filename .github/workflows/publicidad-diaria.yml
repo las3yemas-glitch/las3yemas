@@ -35,28 +35,37 @@ jobs:
           sudo apt-get install -y imagemagick
           convert publicidad/publicidad.svg publicidad/publicidad-hoy.jpg
 
+          echo "Imagen creada:"
           ls -lh publicidad/publicidad-hoy.jpg
 
-      - name: Guardar imagen
+      - name: Guardar imagen en GitHub
         run: |
           git config user.name "Las 3 Yemas Bot"
           git config user.email "bot@las3yemas.cl"
 
           git add -f publicidad/publicidad-hoy.jpg
-          git status
-
-          git diff --cached --quiet || git commit -m "Publicidad automática"
-
+          git commit -m "Publicidad automática" || true
           git push
 
           echo "Archivo guardado:"
           git ls-tree -r HEAD --name-only | grep "publicidad/publicidad-hoy.jpg"
 
+      - name: Preparar URL pública
+        run: |
+          NEW_COMMIT=$(git rev-parse HEAD)
+
+          echo "Commit de la imagen: $NEW_COMMIT"
+
+          IMAGE_URL="https://cdn.jsdelivr.net/gh/las3yemas-glitch/las3yemas@${NEW_COMMIT}/publicidad/publicidad-hoy.jpg"
+
+          echo "URL pública:"
+          echo "$IMAGE_URL"
+
+          echo "IMAGE_URL=$IMAGE_URL" >> "$GITHUB_ENV"
+
       - name: Esperar imagen pública
         run: |
-          IMAGE_URL="https://raw.githubusercontent.com/las3yemas-glitch/las3yemas/main/publicidad/publicidad-hoy.jpg"
-
-          echo "Esperando imagen pública..."
+          echo "Esperando que jsDelivr publique la imagen..."
 
           for i in {1..12}; do
             STATUS=$(curl -L -s -o /dev/null -w "%{http_code}" "$IMAGE_URL")
@@ -71,15 +80,13 @@ jobs:
             sleep 5
           done
 
-          echo "La imagen no quedó disponible."
+          echo "La imagen no está disponible todavía."
           exit 1
 
       - name: Publicar en Instagram
         env:
           ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
         run: |
-          IMAGE_URL="https://raw.githubusercontent.com/las3yemas-glitch/las3yemas/main/publicidad/publicidad-hoy.jpg"
-
           IG_USER_ID=$(curl -s \
             "https://graph.instagram.com/me?fields=id&access_token=${ACCESS_TOKEN}" \
             | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
@@ -106,9 +113,13 @@ jobs:
             exit 1
           fi
 
+          echo "Contenido creado correctamente."
+
           sleep 10
 
-          curl -s -X POST \
+          PUBLISH_RESPONSE=$(curl -s -X POST \
             "https://graph.instagram.com/${IG_USER_ID}/media_publish" \
             -d "creation_id=${CREATION_ID}" \
-            -d "access_token=${ACCESS_TOKEN}"
+            -d "access_token=${ACCESS_TOKEN}")
+
+          echo "$PUBLISH_RESPONSE"
