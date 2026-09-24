@@ -2,10 +2,31 @@ name: Publicar Las 3 Yemitas
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 13 * * *"
 
 jobs:
   publicar:
     runs-on: ubuntu-latest
+
     steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
       - name: Confirmar automatizacion
-        run: echo "Automatizacion de Las 3 Yemitas funcionando"
+        run: |
+          echo "🥚 Las 3 Yemitas"
+          echo "Automatizacion ejecutada correctamente"
+          echo "Fecha: $(date)"
+
+      - name: Crear registro de ejecucion
+        run: |
+          echo "Ultima ejecucion automatica: $(date)" > ultima-publicacion.txt
+
+      - name: Guardar registro
+        run: |
+          git config user.name "Las 3 Yemitas Bot"
+          git config user.email "actions@github.com"
+          git add ultima-publicacion.txt
+          git commit -m "Actualizacion automatica Las 3 Yemitas" || exit 0
+          git push
