@@ -6,9 +6,17 @@ on:
 jobs:
   marketing:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Agente comercial y marketing
+      - name: Crear plan comercial
         run: |
-          echo "Agente de Marketing Las 3 Yemas activo"
-          echo "Objetivo: aumentar ventas de huevos"
-          echo "Zonas: Viña del Mar, Valparaíso, Quilpué, Belloto y Villa Alemana"
+          echo "🥚 LAS 3 YEMAS - AGENTE COMERCIAL"
+          echo "Objetivo: aumentar las ventas de huevos."
+          echo "Cobertura: Viña del Mar, Valparaíso, Quilpué, Belloto y Villa Alemana."
+          echo ""
+          echo "Tareas:"
+          echo "- Crear contenido para Instagram y WhatsApp."
+          echo "- Preparar promociones cuidando el margen."
+          echo "- Impulsar pedidos desde la web."
+          echo "- Proponer campañas comerciales."
+          echo "- Automatizar tareas repetitivas."
