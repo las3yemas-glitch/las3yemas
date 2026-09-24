@@ -5,8 +5,6 @@ on:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 jobs:
   publicar-instagram:
@@ -16,42 +14,31 @@ jobs:
       - name: Descargar repositorio
         uses: actions/checkout@v4
 
-      - name: Crear imagen
+      - name: Preparar publicidad
         run: |
           mkdir -p publicidad
 
-          cat > publicidad/publicidad.svg <<'EOF'
-          <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350">
-            <rect width="1080" height="1350" fill="#fff8e8"/>
-            <text x="540" y="250" text-anchor="middle" font-family="Arial" font-size="82" font-weight="bold" fill="#5b3518">LAS 3 YEMAS</text>
-            <text x="540" y="390" text-anchor="middle" font-family="Arial" font-size="55" fill="#5b3518">Huevos frescos</text>
-            <text x="540" y="470" text-anchor="middle" font-family="Arial" font-size="42" fill="#5b3518">Directo a tu hogar</text>
-            <text x="540" y="700" text-anchor="middle" font-family="Arial" font-size="46" fill="#5b3518">Repartos a domicilio</text>
-            <text x="540" y="800" text-anchor="middle" font-family="Arial" font-size="36" fill="#5b3518">Viña del Mar · Valparaíso</text>
-            <text x="540" y="860" text-anchor="middle" font-family="Arial" font-size="36" fill="#5b3518">Quilpué · Belloto · Villa Alemana</text>
-            <text x="540" y="1080" text-anchor="middle" font-family="Arial" font-size="44" font-weight="bold" fill="#7a421b">PIDE POR WHATSAPP</text>
-          </svg>
-          EOF
+          cp publicidad/plantilla-las3yemas.png publicidad/publicidad-hoy.jpg
 
-          sudo apt-get update
-          sudo apt-get install -y imagemagick
-          convert publicidad/publicidad.svg publicidad/publicidad-hoy.jpg
+          echo "Imagen preparada:"
+          ls -lh publicidad/publicidad-hoy.jpg
 
-      - name: Guardar imagen
+      - name: Guardar publicidad
         run: |
           git config user.name "Las 3 Yemas Bot"
           git config user.email "bot@las3yemas.cl"
+
           git add -f publicidad/publicidad-hoy.jpg
-          git commit -m "Publicidad automática" || true
+          git commit -m "Actualizar publicidad Las 3 Yemas" || true
           git push
 
       - name: Esperar publicación en GitHub Pages
         run: |
           IMAGE_URL="https://las3yemas-glitch.github.io/las3yemas/publicidad/publicidad-hoy.jpg"
 
-          echo "Esperando que GitHub Pages publique la imagen..."
+          echo "Esperando que GitHub Pages publique la nueva imagen..."
 
-          for i in {1..24}; do
+          for i in {1..30}; do
             STATUS=$(curl -L -s -o /dev/null -w "%{http_code}" "$IMAGE_URL")
 
             echo "Intento $i: HTTP $STATUS"
@@ -64,7 +51,7 @@ jobs:
             sleep 5
           done
 
-          echo "La imagen todavía no está disponible."
+          echo "La imagen no quedó disponible en GitHub Pages."
           exit 1
 
       - name: Publicar en Instagram
@@ -82,7 +69,7 @@ jobs:
             exit 1
           fi
 
-          CAPTION="🥚 Huevos frescos directo a tu hogar. 🚚 Repartimos en Viña del Mar, Valparaíso, Quilpué, Belloto y Villa Alemana. 📲 Haz tu pedido por WhatsApp o desde nuestra web. #Las3Yemas #HuevosFrescos"
+          CAPTION="🥚 Huevos frescos directo a tu hogar. 💗 Calidad, frescura y confianza. 🚚 Repartimos en Viña del Mar, Valparaíso, Quilpué, Belloto y Villa Alemana. 📲 Haz tu pedido por WhatsApp o desde nuestra web. #Las3Yemas #HuevosFrescos #HuevosFrescosChile"
 
           RESPONSE=$(curl -s -X POST \
             "https://graph.instagram.com/${IG_USER_ID}/media" \
@@ -95,9 +82,11 @@ jobs:
           CREATION_ID=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
 
           if [ -z "$CREATION_ID" ]; then
-            echo "Instagram rechazó la creación del contenido."
+            echo "Instagram no creó el contenido."
             exit 1
           fi
+
+          echo "Contenido creado correctamente."
 
           sleep 10
 
@@ -107,3 +96,12 @@ jobs:
             -d "access_token=${ACCESS_TOKEN}")
 
           echo "$PUBLISH_RESPONSE"
+
+          PUBLISH_ID=$(echo "$PUBLISH_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
+
+          if [ -z "$PUBLISH_ID" ]; then
+            echo "Instagram no confirmó la publicación."
+            exit 1
+          fi
+
+          echo "PUBLICACIÓN REALIZADA CORRECTAMENTE."
