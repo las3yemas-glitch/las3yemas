@@ -14,52 +14,42 @@ jobs:
       - name: Descargar repositorio
         uses: actions/checkout@v4
 
-      - name: Preparar publicidad rosa
+      - name: Crear imagen nueva
         run: |
           sudo apt-get update
           sudo apt-get install -y imagemagick
-
-          mkdir -p publicidad
 
           convert publicidad/plantilla-las3yemas.png \
             -resize 1080x1350! \
             -quality 95 \
             publicidad/instagram-${GITHUB_RUN_ID}.jpg
 
-          echo "NUEVA IMAGEN CREADA:"
           file publicidad/instagram-${GITHUB_RUN_ID}.jpg
-          ls -lh publicidad/instagram-${GITHUB_RUN_ID}.jpg
 
-      - name: Guardar nueva imagen
+      - name: Guardar imagen
         run: |
           git config user.name "Las 3 Yemas Bot"
           git config user.email "bot@las3yemas.cl"
-
           git add publicidad/instagram-${GITHUB_RUN_ID}.jpg
-          git commit -m "Nueva publicidad Instagram ${GITHUB_RUN_ID}" || true
+          git commit -m "Nueva publicidad Instagram" || true
           git push
 
       - name: Esperar imagen pública
         run: |
           IMAGE_URL="https://las3yemas-glitch.github.io/las3yemas/publicidad/instagram-${GITHUB_RUN_ID}.jpg"
 
-          echo "URL NUEVA:"
-          echo "$IMAGE_URL"
-
           for i in {1..30}; do
             STATUS=$(curl -L -s -o /dev/null -w "%{http_code}" "$IMAGE_URL")
-
             echo "Intento $i: HTTP $STATUS"
 
             if [ "$STATUS" = "200" ]; then
-              echo "IMAGEN NUEVA DISPONIBLE."
+              echo "IMAGEN NUEVA DISPONIBLE"
               exit 0
             fi
 
             sleep 5
           done
 
-          echo "La imagen nueva no quedó disponible."
           exit 1
 
       - name: Publicar en Instagram
@@ -72,17 +62,10 @@ jobs:
             "https://graph.instagram.com/me?fields=id&access_token=${ACCESS_TOKEN}" \
             | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
 
-          if [ -z "$IG_USER_ID" ]; then
-            echo "No se pudo obtener el ID de Instagram."
-            exit 1
-          fi
-
-          CAPTION="🥚 Huevos frescos directo a tu hogar. 💗 Calidad, frescura y confianza. 🚚 Repartimos en Viña del Mar, Valparaíso, Quilpué, Belloto y Villa Alemana. 📲 Haz tu pedido por WhatsApp o desde nuestra web. #Las3Yemas #HuevosFrescos"
-
           RESPONSE=$(curl -s -X POST \
             "https://graph.instagram.com/${IG_USER_ID}/media" \
             -d "image_url=${IMAGE_URL}" \
-            --data-urlencode "caption=${CAPTION}" \
+            --data-urlencode "caption=🥚 Huevos frescos directo a tu hogar. 💗 Calidad, frescura y confianza. 🚚 Repartimos en Viña del Mar, Valparaíso, Quilpué, Belloto y Villa Alemana. #Las3Yemas #HuevosFrescos" \
             -d "access_token=${ACCESS_TOKEN}")
 
           echo "$RESPONSE"
@@ -90,24 +73,12 @@ jobs:
           CREATION_ID=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
 
           if [ -z "$CREATION_ID" ]; then
-            echo "Instagram no creó el contenido."
             exit 1
           fi
 
           sleep 10
 
-          PUBLISH_RESPONSE=$(curl -s -X POST \
+          curl -s -X POST \
             "https://graph.instagram.com/${IG_USER_ID}/media_publish" \
             -d "creation_id=${CREATION_ID}" \
-            -d "access_token=${ACCESS_TOKEN}")
-
-          echo "$PUBLISH_RESPONSE"
-
-          PUBLISH_ID=$(echo "$PUBLISH_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
-
-          if [ -z "$PUBLISH_ID" ]; then
-            echo "Instagram no confirmó la publicación."
-            exit 1
-          fi
-
-          echo "PUBLICACIÓN NUEVA REALIZADA CORRECTAMENTE."
+            -d "access_token=${ACCESS_TOKEN}"
