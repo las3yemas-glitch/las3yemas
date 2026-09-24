@@ -21,32 +21,30 @@ jobs:
 
           mkdir -p publicidad
 
-          magick publicidad/plantilla-las3yemas.png \
+          convert publicidad/plantilla-las3yemas.png \
             -quality 95 \
             publicidad/publicidad-${GITHUB_RUN_ID}.jpg
 
-          echo "Imagen creada:"
+          file publicidad/publicidad-${GITHUB_RUN_ID}.jpg
           ls -lh publicidad/publicidad-${GITHUB_RUN_ID}.jpg
 
-      - name: Guardar imagen
+      - name: Guardar publicidad
         run: |
           git config user.name "Las 3 Yemas Bot"
           git config user.email "bot@las3yemas.cl"
-
           git add publicidad/publicidad-${GITHUB_RUN_ID}.jpg
-          git commit -m "Publicidad automática ${GITHUB_RUN_ID}"
+          git commit -m "Publicidad Las 3 Yemas ${GITHUB_RUN_ID}" || true
           git push
 
       - name: Esperar imagen pública
         run: |
           IMAGE_URL="https://las3yemas-glitch.github.io/las3yemas/publicidad/publicidad-${GITHUB_RUN_ID}.jpg"
 
-          echo "Esperando que GitHub Pages publique la imagen..."
+          echo "Esperando imagen..."
           echo "$IMAGE_URL"
 
           for i in {1..30}; do
             STATUS=$(curl -L -s -o /dev/null -w "%{http_code}" "$IMAGE_URL")
-
             echo "Intento $i: HTTP $STATUS"
 
             if [ "$STATUS" = "200" ]; then
