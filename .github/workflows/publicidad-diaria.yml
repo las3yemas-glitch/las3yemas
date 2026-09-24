@@ -1,0 +1,44 @@
+name: Publicidad diaria Las 3 Yemas
+
+on:
+  schedule:
+    - cron: "0 13 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generar-publicidad:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Crear publicidad del día
+        run: |
+          FECHA=$(date +'%d-%m-%Y')
+          mkdir -p publicidad
+
+          cat > publicidad/publicidad-hoy.md << EOF
+          # 🥚 Las 3 Yemas
+          Fecha: $FECHA
+
+          🥚 Huevos frescos directo a tu hogar.
+
+          🚚 Repartimos en:
+          Viña del Mar · Valparaíso · Quilpué · Belloto · Villa Alemana
+
+          📲 Haz tu pedido por WhatsApp o desde nuestra web.
+
+          #Las3Yemas #HuevosFrescos #ViñaDelMar #Valparaiso #Quilpue
+          EOF
+
+      - name: Guardar publicidad
+        run: |
+          git config user.name "Las 3 Yemas Bot"
+          git config user.email "bot@las3yemas.cl"
+          git add publicidad/publicidad-hoy.md
+          git diff --cached --quiet || git commit -m "Publicidad diaria automática"
+          git push
