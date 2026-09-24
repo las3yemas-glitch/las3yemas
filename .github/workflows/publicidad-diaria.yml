@@ -14,29 +14,38 @@ jobs:
       - name: Descargar repositorio
         uses: actions/checkout@v4
 
-      - name: Preparar publicidad
+      - name: Preparar nueva publicidad
         run: |
+          sudo apt-get update
+          sudo apt-get install -y imagemagick
+
           mkdir -p publicidad
 
-          cp publicidad/plantilla-las3yemas.png publicidad/publicidad-hoy.jpg
+          convert publicidad/plantilla-las3yemas.png \
+            -resize 1080x1350^ \
+            -gravity center \
+            -extent 1080x1350 \
+            -quality 95 \
+            publicidad/publicidad-${GITHUB_RUN_ID}.jpg
 
-          echo "Imagen preparada:"
-          ls -lh publicidad/publicidad-hoy.jpg
+          echo "Imagen creada:"
+          ls -lh publicidad/publicidad-${GITHUB_RUN_ID}.jpg
 
-      - name: Guardar publicidad
+      - name: Guardar nueva publicidad
         run: |
           git config user.name "Las 3 Yemas Bot"
           git config user.email "bot@las3yemas.cl"
 
-          git add -f publicidad/publicidad-hoy.jpg
-          git commit -m "Actualizar publicidad Las 3 Yemas" || true
+          git add publicidad/publicidad-${GITHUB_RUN_ID}.jpg
+          git commit -m "Nueva publicidad Las 3 Yemas ${GITHUB_RUN_ID}"
           git push
 
-      - name: Esperar publicación en GitHub Pages
+      - name: Esperar imagen pública
         run: |
-          IMAGE_URL="https://las3yemas-glitch.github.io/las3yemas/publicidad/publicidad-hoy.jpg"
+          IMAGE_URL="https://las3yemas-glitch.github.io/las3yemas/publicidad/publicidad-${GITHUB_RUN_ID}.jpg"
 
-          echo "Esperando que GitHub Pages publique la nueva imagen..."
+          echo "Esperando publicación de la imagen..."
+          echo "$IMAGE_URL"
 
           for i in {1..30}; do
             STATUS=$(curl -L -s -o /dev/null -w "%{http_code}" "$IMAGE_URL")
@@ -51,14 +60,14 @@ jobs:
             sleep 5
           done
 
-          echo "La imagen no quedó disponible en GitHub Pages."
+          echo "La imagen no quedó disponible."
           exit 1
 
       - name: Publicar en Instagram
         env:
           ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
         run: |
-          IMAGE_URL="https://las3yemas-glitch.github.io/las3yemas/publicidad/publicidad-hoy.jpg"
+          IMAGE_URL="https://las3yemas-glitch.github.io/las3yemas/publicidad/publicidad-${GITHUB_RUN_ID}.jpg"
 
           IG_USER_ID=$(curl -s \
             "https://graph.instagram.com/me?fields=id&access_token=${ACCESS_TOKEN}" \
@@ -69,7 +78,7 @@ jobs:
             exit 1
           fi
 
-          CAPTION="🥚 Huevos frescos directo a tu hogar. 💗 Calidad, frescura y confianza. 🚚 Repartimos en Viña del Mar, Valparaíso, Quilpué, Belloto y Villa Alemana. 📲 Haz tu pedido por WhatsApp o desde nuestra web. #Las3Yemas #HuevosFrescos #HuevosFrescosChile"
+          CAPTION="🥚 Huevos frescos directo a tu hogar. 💗 Calidad, frescura y confianza. 🚚 Repartimos en Viña del Mar, Valparaíso, Quilpué, Belloto y Villa Alemana. 📲 Haz tu pedido por WhatsApp o desde nuestra web. #Las3Yemas #HuevosFrescos"
 
           RESPONSE=$(curl -s -X POST \
             "https://graph.instagram.com/${IG_USER_ID}/media" \
@@ -85,8 +94,6 @@ jobs:
             echo "Instagram no creó el contenido."
             exit 1
           fi
-
-          echo "Contenido creado correctamente."
 
           sleep 10
 
