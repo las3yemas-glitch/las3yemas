@@ -14,37 +14,34 @@ jobs:
       - name: Descargar repositorio
         uses: actions/checkout@v4
 
-      - name: Preparar nueva publicidad
+      - name: Preparar publicidad
         run: |
           sudo apt-get update
           sudo apt-get install -y imagemagick
 
           mkdir -p publicidad
 
-          convert publicidad/plantilla-las3yemas.png \
-            -resize 1080x1350^ \
-            -gravity center \
-            -extent 1080x1350 \
+          magick publicidad/plantilla-las3yemas.png \
             -quality 95 \
             publicidad/publicidad-${GITHUB_RUN_ID}.jpg
 
           echo "Imagen creada:"
           ls -lh publicidad/publicidad-${GITHUB_RUN_ID}.jpg
 
-      - name: Guardar nueva publicidad
+      - name: Guardar imagen
         run: |
           git config user.name "Las 3 Yemas Bot"
           git config user.email "bot@las3yemas.cl"
 
           git add publicidad/publicidad-${GITHUB_RUN_ID}.jpg
-          git commit -m "Nueva publicidad Las 3 Yemas ${GITHUB_RUN_ID}"
+          git commit -m "Publicidad automática ${GITHUB_RUN_ID}"
           git push
 
       - name: Esperar imagen pública
         run: |
           IMAGE_URL="https://las3yemas-glitch.github.io/las3yemas/publicidad/publicidad-${GITHUB_RUN_ID}.jpg"
 
-          echo "Esperando publicación de la imagen..."
+          echo "Esperando que GitHub Pages publique la imagen..."
           echo "$IMAGE_URL"
 
           for i in {1..30}; do
