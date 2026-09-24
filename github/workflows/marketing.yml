@@ -1,0 +1,35 @@
+name: Marketing Las 3 Yemas
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 12 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  marketing:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Crear propuesta diaria
+        run: |
+          mkdir -p marketing
+          FECHA=$(date +'%Y-%m-%d')
+          echo "# Marketing Las 3 Yemas - $FECHA" > marketing/hoy.md
+          echo "" >> marketing/hoy.md
+          echo "🥚 Contenido diario preparado automáticamente." >> marketing/hoy.md
+          echo "" >> marketing/hoy.md
+          echo "Canales: Instagram, WhatsApp y web." >> marketing/hoy.md
+
+      - name: Guardar resultado
+        run: |
+          git config user.name "Las 3 Yemas Bot"
+          git config user.email "actions@github.com"
+          git add marketing/hoy.md
+          git commit -m "Marketing automático diario" || exit 0
+          git push
