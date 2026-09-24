@@ -35,19 +35,28 @@ jobs:
           sudo apt-get install -y imagemagick
           convert publicidad/publicidad.svg publicidad/publicidad-hoy.jpg
 
+          ls -lh publicidad/publicidad-hoy.jpg
+
       - name: Guardar imagen
         run: |
           git config user.name "Las 3 Yemas Bot"
           git config user.email "bot@las3yemas.cl"
-          git add publicidad/publicidad-hoy.jpg
+
+          git add -f publicidad/publicidad-hoy.jpg
+          git status
+
           git diff --cached --quiet || git commit -m "Publicidad automática"
+
           git push
+
+          echo "Archivo guardado:"
+          git ls-tree -r HEAD --name-only | grep "publicidad/publicidad-hoy.jpg"
 
       - name: Esperar imagen pública
         run: |
           IMAGE_URL="https://raw.githubusercontent.com/las3yemas-glitch/las3yemas/main/publicidad/publicidad-hoy.jpg"
 
-          echo "Esperando que la imagen esté disponible públicamente..."
+          echo "Esperando imagen pública..."
 
           for i in {1..12}; do
             STATUS=$(curl -L -s -o /dev/null -w "%{http_code}" "$IMAGE_URL")
@@ -55,14 +64,14 @@ jobs:
             echo "Intento $i: HTTP $STATUS"
 
             if [ "$STATUS" = "200" ]; then
-              echo "Imagen disponible."
+              echo "IMAGEN DISPONIBLE."
               exit 0
             fi
 
             sleep 5
           done
 
-          echo "La imagen todavía no está disponible públicamente."
+          echo "La imagen no quedó disponible."
           exit 1
 
       - name: Publicar en Instagram
@@ -99,9 +108,7 @@ jobs:
 
           sleep 10
 
-          PUBLISH_RESPONSE=$(curl -s -X POST \
+          curl -s -X POST \
             "https://graph.instagram.com/${IG_USER_ID}/media_publish" \
             -d "creation_id=${CREATION_ID}" \
-            -d "access_token=${ACCESS_TOKEN}")
-
-          echo "$PUBLISH_RESPONSE"
+            -d "access_token=${ACCESS_TOKEN}"
