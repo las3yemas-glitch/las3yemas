@@ -18,27 +18,13 @@ jobs:
           cat > publicidad/publicidad.svg <<'EOF'
           <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350">
             <rect width="1080" height="1350" fill="#fff8e8"/>
-            <text x="540" y="250" text-anchor="middle"
-                  font-family="Arial" font-size="82" font-weight="bold"
-                  fill="#5b3518">LAS 3 YEMAS</text>
-            <text x="540" y="390" text-anchor="middle"
-                  font-family="Arial" font-size="55"
-                  fill="#5b3518">Huevos frescos</text>
-            <text x="540" y="470" text-anchor="middle"
-                  font-family="Arial" font-size="42"
-                  fill="#5b3518">Directo a tu hogar</text>
-            <text x="540" y="700" text-anchor="middle"
-                  font-family="Arial" font-size="46"
-                  fill="#5b3518">Repartos a domicilio</text>
-            <text x="540" y="800" text-anchor="middle"
-                  font-family="Arial" font-size="36"
-                  fill="#5b3518">Viña del Mar · Valparaíso</text>
-            <text x="540" y="860" text-anchor="middle"
-                  font-family="Arial" font-size="36"
-                  fill="#5b3518">Quilpué · Belloto · Villa Alemana</text>
-            <text x="540" y="1080" text-anchor="middle"
-                  font-family="Arial" font-size="44" font-weight="bold"
-                  fill="#7a421b">PIDE POR WHATSAPP</text>
+            <text x="540" y="250" text-anchor="middle" font-family="Arial" font-size="82" font-weight="bold" fill="#5b3518">LAS 3 YEMAS</text>
+            <text x="540" y="390" text-anchor="middle" font-family="Arial" font-size="55" fill="#5b3518">Huevos frescos</text>
+            <text x="540" y="470" text-anchor="middle" font-family="Arial" font-size="42" fill="#5b3518">Directo a tu hogar</text>
+            <text x="540" y="700" text-anchor="middle" font-family="Arial" font-size="46" fill="#5b3518">Repartos a domicilio</text>
+            <text x="540" y="800" text-anchor="middle" font-family="Arial" font-size="36" fill="#5b3518">Viña del Mar · Valparaíso</text>
+            <text x="540" y="860" text-anchor="middle" font-family="Arial" font-size="36" fill="#5b3518">Quilpué · Belloto · Villa Alemana</text>
+            <text x="540" y="1080" text-anchor="middle" font-family="Arial" font-size="44" font-weight="bold" fill="#7a421b">PIDE POR WHATSAPP</text>
           </svg>
           EOF
 
@@ -60,9 +46,7 @@ jobs:
         run: |
           IMAGE_URL="https://raw.githubusercontent.com/las3yemas-glitch/las3yemas/main/publicidad/publicidad-hoy.jpg"
 
-          IG_USER_ID=$(curl -s \
-            "https://graph.instagram.com/me?fields=id&access_token=${ACCESS_TOKEN}" \
-            | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
+          IG_USER_ID=$(curl -s "https://graph.instagram.com/me?fields=id&access_token=${ACCESS_TOKEN}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
 
           if [ -z "$IG_USER_ID" ]; then
             echo "No se pudo obtener el usuario de Instagram."
