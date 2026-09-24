@@ -1,0 +1,14 @@
+name: Marketing Las 3 Yemas
+
+on:
+  workflow_dispatch:
+
+jobs:
+  marketing:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Agente comercial y marketing
+        run: |
+          echo "Agente de Marketing Las 3 Yemas activo"
+          echo "Objetivo: aumentar ventas de huevos"
+          echo "Zonas: Viña del Mar, Valparaíso, Quilpué, Belloto y Villa Alemana"
