@@ -3,6 +3,9 @@ name: Publicidad diaria Las 3 Yemas
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   publicar-instagram:
     runs-on: ubuntu-latest
