@@ -24,23 +24,28 @@ jobs:
             -quality 95 \
             publicidad/instagram-${GITHUB_RUN_ID}.jpg
 
+          echo "IMAGEN NUEVA:"
           file publicidad/instagram-${GITHUB_RUN_ID}.jpg
 
-      - name: Guardar imagen
+      - name: Guardar imagen nueva
         run: |
           git config user.name "Las 3 Yemas Bot"
           git config user.email "bot@las3yemas.cl"
 
           git add publicidad/instagram-${GITHUB_RUN_ID}.jpg
-          git commit -m "Nueva publicidad Instagram" || true
+          git commit -m "Publicidad nueva Las 3 Yemas" || true
           git push
 
       - name: Esperar imagen pública
         run: |
           IMAGE_URL="https://las3yemas-glitch.github.io/las3yemas/publicidad/instagram-${GITHUB_RUN_ID}.jpg"
 
+          echo "URL DE LA IMAGEN:"
+          echo "$IMAGE_URL"
+
           for i in {1..30}; do
             STATUS=$(curl -L -s -o /dev/null -w "%{http_code}" "$IMAGE_URL")
+
             echo "Intento $i: HTTP $STATUS"
 
             if [ "$STATUS" = "200" ]; then
@@ -51,6 +56,7 @@ jobs:
             sleep 5
           done
 
+          echo "ERROR: imagen no disponible"
           exit 1
 
       - name: Publicar en Instagram
@@ -63,10 +69,17 @@ jobs:
             "https://graph.instagram.com/me?fields=id&access_token=${ACCESS_TOKEN}" \
             | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
 
+          if [ -z "$IG_USER_ID" ]; then
+            echo "No se obtuvo el ID de Instagram"
+            exit 1
+          fi
+
+          CAPTION="🥚 Huevos frescos directo a tu hogar. 💗 Calidad, frescura y confianza. 🚚 Repartimos en Viña del Mar, Valparaíso, Quilpué, Belloto y Villa Alemana. 📲 Haz tu pedido por WhatsApp o desde nuestra web. #Las3Yemas #HuevosFrescos"
+
           RESPONSE=$(curl -s -X POST \
             "https://graph.instagram.com/${IG_USER_ID}/media" \
             -d "image_url=${IMAGE_URL}" \
-            --data-urlencode "caption=🥚 Huevos frescos directo a tu hogar. 💗 Calidad, frescura y confianza. 🚚 Repartimos en Viña del Mar, Valparaíso, Quilpué, Belloto y Villa Alemana. #Las3Yemas #HuevosFrescos" \
+            --data-urlencode "caption=${CAPTION}" \
             -d "access_token=${ACCESS_TOKEN}")
 
           echo "$RESPONSE"
@@ -74,12 +87,24 @@ jobs:
           CREATION_ID=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
 
           if [ -z "$CREATION_ID" ]; then
+            echo "Instagram no creó el contenido"
             exit 1
           fi
 
           sleep 10
 
-          curl -s -X POST \
+          PUBLISH_RESPONSE=$(curl -s -X POST \
             "https://graph.instagram.com/${IG_USER_ID}/media_publish" \
             -d "creation_id=${CREATION_ID}" \
-            -d "access_token=${ACCESS_TOKEN}"
+            -d "access_token=${ACCESS_TOKEN}")
+
+          echo "$PUBLISH_RESPONSE"
+
+          PUBLISH_ID=$(echo "$PUBLISH_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
+
+          if [ -z "$PUBLISH_ID" ]; then
+            echo "Instagram no confirmó la publicación"
+            exit 1
+          fi
+
+          echo "PUBLICACION NUEVA REALIZADA CORRECTAMENTE"
