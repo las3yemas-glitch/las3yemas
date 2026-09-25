@@ -16,68 +16,43 @@ jobs:
       - name: Descargar repositorio
         uses: actions/checkout@v4
 
-      - name: Seleccionar contenido del día
+      - name: Seleccionar pieza del día
         id: contenido
         run: |
           DIA=$(date -u +%u)
 
           case "$DIA" in
-            1)
-              IMAGEN="publicidad/plantilla-las3yemas.png"
-              CAPTION="🥚 ¿Sabías que el huevo es una fuente de proteína de alta calidad? 💗 Un alimento versátil para desayunos, almuerzos y cenas. #Las3Yemas #HuevosFrescos"
-              ;;
-            2)
-              IMAGEN="publicidad/plantilla-las3yemas.png"
-              CAPTION="🍳 RECETA FÁCIL: Omelette de verduras. Huevos, espinaca, tomate, sal y pimienta. ¡Rápido, rico y fácil! 💗 #Las3Yemas #Recetas"
-              ;;
-            3)
-              IMAGEN="publicidad/plantilla-las3yemas.png"
-              CAPTION="💡 TIP DE COCINA: Guarda los huevos en un lugar fresco y evita cambios innecesarios de temperatura. 🥚💗 #Las3Yemas #TipsDeCocina"
-              ;;
-            4)
-              IMAGEN="publicidad/plantilla-las3yemas.png"
-              CAPTION="🐔 ¿SABÍAS QUE...? El color de la cáscara depende principalmente de la raza de la gallina. Blancos o cafés, lo importante es su frescura y calidad. 💗 #Las3Yemas"
-              ;;
-            5)
-              IMAGEN="publicidad/plantilla-las3yemas.png"
-              CAPTION="🚚 ¿Te quedaste sin huevos? Nosotros te los llevamos. 💗 Repartos en Viña del Mar, Valparaíso, Quilpué, Belloto y Villa Alemana. 📲 Haz tu pedido. #Las3Yemas #HuevosFrescos"
-              ;;
-            6)
-              IMAGEN="publicidad/plantilla-las3yemas.png"
-              CAPTION="🍳 IDEA PARA EL FIN DE SEMANA: Huevos para un desayuno rico y sencillo. ¿Cómo te gustan más: revueltos, fritos o pochados? 💗🥚 #Las3Yemas"
-              ;;
-            7)
-              IMAGEN="publicidad/plantilla-las3yemas.png"
-              CAPTION="❤️ DOMINGO EN FAMILIA: Un buen desayuno siempre puede empezar con huevos frescos. ¿Cuál es tu receta favorita? 🥚 #Las3Yemas"
-              ;;
+            1) IMAGEN="publicidad/01_semana.png" ;;
+            2) IMAGEN="publicidad/02_semana.png" ;;
+            3) IMAGEN="publicidad/03_semana.png" ;;
+            4) IMAGEN="publicidad/04_semana.png" ;;
+            5) IMAGEN="publicidad/05_semana.png" ;;
+            6) IMAGEN="publicidad/06_semana.png" ;;
+            7) IMAGEN="publicidad/07_semana.png" ;;
           esac
 
           echo "IMAGEN=$IMAGEN" >> "$GITHUB_OUTPUT"
-          echo "CAPTION=$CAPTION" >> "$GITHUB_OUTPUT"
 
       - name: Preparar imagen
         run: |
-          cp "${{ steps.contenido.outputs.IMAGEN }}" "publicidad/instagram-${GITHUB_RUN_ID}.jpg"
+          cp "${{ steps.contenido.outputs.IMAGEN }}" \
+             "publicidad/instagram-${GITHUB_RUN_ID}.png"
 
       - name: Guardar imagen
         run: |
           git config user.name "Las 3 Yemas Bot"
           git config user.email "bot@las3yemas.cl"
 
-          git add "publicidad/instagram-${GITHUB_RUN_ID}.jpg"
+          git add "publicidad/instagram-${GITHUB_RUN_ID}.png"
           git commit -m "Publicidad diaria Las 3 Yemas" || true
           git push
 
       - name: Esperar imagen pública
         run: |
-          IMAGE_URL="https://las3yemas-glitch.github.io/las3yemas/publicidad/instagram-${GITHUB_RUN_ID}.jpg"
-
-          echo "Esperando imagen..."
-          echo "$IMAGE_URL"
+          IMAGE_URL="https://las3yemas-glitch.github.io/las3yemas/publicidad/instagram-${GITHUB_RUN_ID}.png"
 
           for i in {1..30}; do
             STATUS=$(curl -L -s -o /dev/null -w "%{http_code}" "$IMAGE_URL")
-
             echo "Intento $i: HTTP $STATUS"
 
             if [ "$STATUS" = "200" ]; then
@@ -88,14 +63,13 @@ jobs:
             sleep 5
           done
 
-          echo "La imagen no está disponible."
           exit 1
 
       - name: Publicar en Instagram
         env:
           ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
         run: |
-          IMAGE_URL="https://las3yemas-glitch.github.io/las3yemas/publicidad/instagram-${GITHUB_RUN_ID}.jpg"
+          IMAGE_URL="https://las3yemas-glitch.github.io/las3yemas/publicidad/instagram-${GITHUB_RUN_ID}.png"
 
           IG_USER_ID=$(curl -s \
             "https://graph.instagram.com/me?fields=id&access_token=${ACCESS_TOKEN}" \
@@ -106,10 +80,12 @@ jobs:
             exit 1
           fi
 
+          CAPTION="🥚 Las 3 Yemas 💗 Huevos frescos y contenido útil para ti. 🚚 Repartimos en Viña del Mar, Valparaíso, Quilpué, Belloto y Villa Alemana. #Las3Yemas #HuevosFrescos"
+
           RESPONSE=$(curl -s -X POST \
             "https://graph.instagram.com/${IG_USER_ID}/media" \
             -d "image_url=${IMAGE_URL}" \
-            --data-urlencode "caption=${{ steps.contenido.outputs.CAPTION }}" \
+            --data-urlencode "caption=${CAPTION}" \
             -d "access_token=${ACCESS_TOKEN}")
 
           echo "$RESPONSE"
@@ -117,7 +93,6 @@ jobs:
           CREATION_ID=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
 
           if [ -z "$CREATION_ID" ]; then
-            echo "Instagram no creó el contenido"
             exit 1
           fi
 
@@ -133,7 +108,6 @@ jobs:
           PUBLISH_ID=$(echo "$PUBLISH_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
 
           if [ -z "$PUBLISH_ID" ]; then
-            echo "Instagram no confirmó la publicación"
             exit 1
           fi
 
