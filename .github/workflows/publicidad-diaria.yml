@@ -2,6 +2,8 @@ name: Publicidad diaria Las 3 Yemas
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 13 * * *"
 
 permissions:
   contents: write
@@ -14,33 +16,63 @@ jobs:
       - name: Descargar repositorio
         uses: actions/checkout@v4
 
-      - name: Crear imagen nueva
+      - name: Seleccionar contenido del día
+        id: contenido
         run: |
-          sudo apt-get update
-          sudo apt-get install -y imagemagick
+          DIA=$(date -u +%u)
 
-          convert publicidad/plantilla-las3yemas.png \
-            -resize 1080x1350! \
-            -quality 95 \
-            publicidad/instagram-${GITHUB_RUN_ID}.jpg
+          case "$DIA" in
+            1)
+              IMAGEN="publicidad/plantilla-las3yemas.png"
+              CAPTION="🥚 ¿Sabías que el huevo es una fuente de proteína de alta calidad? 💗 Un alimento versátil para desayunos, almuerzos y cenas. #Las3Yemas #HuevosFrescos"
+              ;;
+            2)
+              IMAGEN="publicidad/plantilla-las3yemas.png"
+              CAPTION="🍳 RECETA FÁCIL: Omelette de verduras. Huevos, espinaca, tomate, sal y pimienta. ¡Rápido, rico y fácil! 💗 #Las3Yemas #Recetas"
+              ;;
+            3)
+              IMAGEN="publicidad/plantilla-las3yemas.png"
+              CAPTION="💡 TIP DE COCINA: Guarda los huevos en un lugar fresco y evita cambios innecesarios de temperatura. 🥚💗 #Las3Yemas #TipsDeCocina"
+              ;;
+            4)
+              IMAGEN="publicidad/plantilla-las3yemas.png"
+              CAPTION="🐔 ¿SABÍAS QUE...? El color de la cáscara depende principalmente de la raza de la gallina. Blancos o cafés, lo importante es su frescura y calidad. 💗 #Las3Yemas"
+              ;;
+            5)
+              IMAGEN="publicidad/plantilla-las3yemas.png"
+              CAPTION="🚚 ¿Te quedaste sin huevos? Nosotros te los llevamos. 💗 Repartos en Viña del Mar, Valparaíso, Quilpué, Belloto y Villa Alemana. 📲 Haz tu pedido. #Las3Yemas #HuevosFrescos"
+              ;;
+            6)
+              IMAGEN="publicidad/plantilla-las3yemas.png"
+              CAPTION="🍳 IDEA PARA EL FIN DE SEMANA: Huevos para un desayuno rico y sencillo. ¿Cómo te gustan más: revueltos, fritos o pochados? 💗🥚 #Las3Yemas"
+              ;;
+            7)
+              IMAGEN="publicidad/plantilla-las3yemas.png"
+              CAPTION="❤️ DOMINGO EN FAMILIA: Un buen desayuno siempre puede empezar con huevos frescos. ¿Cuál es tu receta favorita? 🥚 #Las3Yemas"
+              ;;
+          esac
 
-          echo "IMAGEN NUEVA:"
-          file publicidad/instagram-${GITHUB_RUN_ID}.jpg
+          echo "IMAGEN=$IMAGEN" >> "$GITHUB_OUTPUT"
+          echo "CAPTION=$CAPTION" >> "$GITHUB_OUTPUT"
 
-      - name: Guardar imagen nueva
+      - name: Preparar imagen
+        run: |
+          cp "${{ steps.contenido.outputs.IMAGEN }}" "publicidad/instagram-${GITHUB_RUN_ID}.jpg"
+
+      - name: Guardar imagen
         run: |
           git config user.name "Las 3 Yemas Bot"
           git config user.email "bot@las3yemas.cl"
 
-          git add publicidad/instagram-${GITHUB_RUN_ID}.jpg
-          git commit -m "Publicidad nueva Las 3 Yemas" || true
+          git add "publicidad/instagram-${GITHUB_RUN_ID}.jpg"
+          git commit -m "Publicidad diaria Las 3 Yemas" || true
           git push
 
       - name: Esperar imagen pública
         run: |
           IMAGE_URL="https://las3yemas-glitch.github.io/las3yemas/publicidad/instagram-${GITHUB_RUN_ID}.jpg"
 
-          echo "URL DE LA IMAGEN:"
+          echo "Esperando imagen..."
           echo "$IMAGE_URL"
 
           for i in {1..30}; do
@@ -49,14 +81,14 @@ jobs:
             echo "Intento $i: HTTP $STATUS"
 
             if [ "$STATUS" = "200" ]; then
-              echo "IMAGEN NUEVA DISPONIBLE"
+              echo "IMAGEN DISPONIBLE"
               exit 0
             fi
 
             sleep 5
           done
 
-          echo "ERROR: imagen no disponible"
+          echo "La imagen no está disponible."
           exit 1
 
       - name: Publicar en Instagram
@@ -74,12 +106,10 @@ jobs:
             exit 1
           fi
 
-          CAPTION="🥚 Huevos frescos directo a tu hogar. 💗 Calidad, frescura y confianza. 🚚 Repartimos en Viña del Mar, Valparaíso, Quilpué, Belloto y Villa Alemana. 📲 Haz tu pedido por WhatsApp o desde nuestra web. #Las3Yemas #HuevosFrescos"
-
           RESPONSE=$(curl -s -X POST \
             "https://graph.instagram.com/${IG_USER_ID}/media" \
             -d "image_url=${IMAGE_URL}" \
-            --data-urlencode "caption=${CAPTION}" \
+            --data-urlencode "caption=${{ steps.contenido.outputs.CAPTION }}" \
             -d "access_token=${ACCESS_TOKEN}")
 
           echo "$RESPONSE"
@@ -107,4 +137,4 @@ jobs:
             exit 1
           fi
 
-          echo "PUBLICACION NUEVA REALIZADA CORRECTAMENTE"
+          echo "PUBLICACIÓN REALIZADA CORRECTAMENTE"
