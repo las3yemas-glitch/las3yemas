@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  publicar-instagram:
+  publicar:
     runs-on: ubuntu-latest
 
     steps:
@@ -20,7 +20,6 @@ jobs:
         id: contenido
         run: |
           DIA=$(date -u +%u)
-
           case "$DIA" in
             1) IMAGEN="publicidad/01_semana.png" ;;
             2) IMAGEN="publicidad/02_semana.png" ;;
@@ -30,19 +29,16 @@ jobs:
             6) IMAGEN="publicidad/06_semana.png" ;;
             7) IMAGEN="publicidad/07_semana.png" ;;
           esac
-
           echo "IMAGEN=$IMAGEN" >> "$GITHUB_OUTPUT"
 
       - name: Preparar imagen
         run: |
-          cp "${{ steps.contenido.outputs.IMAGEN }}" \
-             "publicidad/instagram-${GITHUB_RUN_ID}.png"
+          cp "${{ steps.contenido.outputs.IMAGEN }}" "publicidad/instagram-${GITHUB_RUN_ID}.png"
 
       - name: Guardar imagen
         run: |
           git config user.name "Las 3 Yemas Bot"
           git config user.email "bot@las3yemas.cl"
-
           git add "publicidad/instagram-${GITHUB_RUN_ID}.png"
           git commit -m "Publicidad diaria Las 3 Yemas" || true
           git push
@@ -50,19 +46,15 @@ jobs:
       - name: Esperar imagen pública
         run: |
           IMAGE_URL="https://las3yemas-glitch.github.io/las3yemas/publicidad/instagram-${GITHUB_RUN_ID}.png"
-
           for i in {1..30}; do
             STATUS=$(curl -L -s -o /dev/null -w "%{http_code}" "$IMAGE_URL")
             echo "Intento $i: HTTP $STATUS"
-
             if [ "$STATUS" = "200" ]; then
               echo "IMAGEN DISPONIBLE"
               exit 0
             fi
-
             sleep 5
           done
-
           exit 1
 
       - name: Publicar en Instagram
@@ -91,7 +83,6 @@ jobs:
           echo "$RESPONSE"
 
           CREATION_ID=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
-
           if [ -z "$CREATION_ID" ]; then
             exit 1
           fi
@@ -111,8 +102,9 @@ jobs:
             exit 1
           fi
 
-          echo "PUBLICACIÓN REALIZADA CORRECTAMENTE"
-                - name: Publicar en Facebook
+          echo "INSTAGRAM PUBLICADO CORRECTAMENTE"
+
+      - name: Publicar en Facebook
         env:
           FACEBOOK_PAGE_ACCESS_TOKEN: ${{ secrets.FACEBOOK_PAGE_ACCESS_TOKEN }}
         run: |
@@ -123,4 +115,3 @@ jobs:
             -d "url=${IMAGE_URL}" \
             --data-urlencode "caption=🥚 Las 3 Yemas 💗 Huevos frescos y contenido útil para ti. 🚚 Repartimos en Viña del Mar, Valparaíso, Quilpué, Belloto y Villa Alemana. #Las3Yemas #HuevosFrescos" \
             -d "access_token=${FACEBOOK_PAGE_ACCESS_TOKEN}"
-              
