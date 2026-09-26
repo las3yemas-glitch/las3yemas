@@ -112,3 +112,14 @@ jobs:
           fi
 
           echo "PUBLICACIÓN REALIZADA CORRECTAMENTE"
+                - name: Publicar en Facebook
+        env:
+          FACEBOOK_PAGE_ACCESS_TOKEN: ${{ secrets.FACEBOOK_PAGE_ACCESS_TOKEN }}
+        run: |
+          IMAGE_URL="https://las3yemas-glitch.github.io/las3yemas/publicidad/instagram-${GITHUB_RUN_ID}.png"
+
+          curl -s -X POST \
+            "https://graph.facebook.com/v26.0/1349788938213993/photos" \
+            -d "url=${IMAGE_URL}" \
+            --data-urlencode "caption=🥚 Las 3 Yemas 💗 Huevos frescos y contenido útil para ti. 🚚 Repartimos en Viña del Mar, Valparaíso, Quilpué, Belloto y Villa Alemana. #Las3Yemas #HuevosFrescos" \
+            -d "access_token=${FACEBOOK_PAGE_ACCESS_TOKEN}"
