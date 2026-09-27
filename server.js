@@ -33,13 +33,13 @@ const TOKEN_STORE_PATH =
 // Imágenes semanales, en el mismo orden que usa el workflow de
 // publicidad-diaria.yml para Instagram/Facebook (1 = lunes ... 7 = domingo).
 const WEEKLY_IMAGES = {
-  1: "01_semana.png",
-  2: "02_semana.png",
-  3: "03_semana.png",
-  4: "04_semana.png",
-  5: "05_semana.png",
-  6: "06_semana.png",
-  7: "07_semana.png",
+  1: "01_semana.jpg",
+  2: "02_semana.jpg",
+  3: "03_semana.jpg",
+  4: "04_semana.jpg",
+  5: "05_semana.jpg",
+  6: "06_semana.jpg",
+  7: "07_semana.jpg",
 };
 
 const CAPTION =
@@ -57,6 +57,7 @@ let tokenState = {
 };
 
 let lastPersistError = null;
+let lastPublishId = null;
 let lastPersistOk = null;
 
 function maskToken(token) {
@@ -357,6 +358,8 @@ async function publishToTikTok({ imageUrl, privacyLevel }) {
     throw new Error("TikTok rechazó la publicación. Revisa los logs de Render.");
   }
 
+  lastPublishId = publishData?.data?.publish_id || null;
+
   logSafe("tiktok:publish:ok", {
     publish_id: publishData?.data?.publish_id,
     imageUrl,
@@ -510,7 +513,7 @@ app.get("/tiktok/test", async (req, res) => {
   try {
     await publishToTikTok({
       imageUrl:
-        "https://las3yemas-glitch.github.io/las3yemas/publicidad/01_semana.png",
+        "https://las3yemas-glitch.github.io/las3yemas/publicidad/01_semana.jpg",
       privacyLevel: PRIVACY_LEVEL,
     });
 
@@ -534,6 +537,29 @@ app.get("/tiktok/test", async (req, res) => {
       <p>${err.message}</p>
       <p>Revisa los logs de Render para más detalle.</p>
     `);
+  }
+});
+
+// Consulta el estado final de la última publicación (TikTok la procesa en
+// segundo plano; "init" ok no garantiza que se haya publicado).
+app.get("/tiktok/last-status", async (req, res) => {
+  try {
+    if (!lastPublishId) {
+      return res.json({ ok: false, message: "Aún no hay publicaciones desde que arrancó el servidor." });
+    }
+    const accessToken = await getValidAccessToken();
+    const r = await fetch("https://open.tiktokapis.com/v2/post/publish/status/fetch/", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json; charset=UTF-8",
+      },
+      body: JSON.stringify({ publish_id: lastPublishId }),
+    });
+    const data = await r.json();
+    res.json({ publish_id: lastPublishId, status: data?.data?.status, fail_reason: data?.data?.fail_reason, error: data?.error?.code });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
   }
 });
 
