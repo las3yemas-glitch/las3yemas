@@ -115,3 +115,31 @@ jobs:
             -d "url=${IMAGE_URL}" \
             --data-urlencode "caption=🥚 Las 3 Yemas 💗 Huevos frescos y contenido útil para ti. 🚚 Repartimos en Viña del Mar, Valparaíso, Quilpué, Belloto y Villa Alemana. #Las3Yemas #HuevosFrescos" \
             -d "access_token=${FACEBOOK_PAGE_ACCESS_TOKEN}"
+
+      # No debe romper el job si falla: Instagram y Facebook ya se
+      # publicaron en los pasos anteriores independientemente del resultado
+      # de este paso.
+      - name: Publicar en TikTok
+        continue-on-error: true
+        env:
+          TIKTOK_AUTOMATION_SECRET: ${{ secrets.TIKTOK_AUTOMATION_SECRET }}
+          RENDER_TIKTOK_URL: ${{ vars.RENDER_TIKTOK_URL }}
+        run: |
+          if [ -z "$RENDER_TIKTOK_URL" ]; then
+            echo "RENDER_TIKTOK_URL no está configurado (Settings > Secrets and variables > Actions > Variables). Se omite la publicación en TikTok."
+            exit 0
+          fi
+
+          HTTP_STATUS=$(curl -s -o /tmp/tiktok_response.json -w "%{http_code}" -X POST \
+            "${RENDER_TIKTOK_URL%/}/tiktok/publish" \
+            -H "Authorization: Bearer ${TIKTOK_AUTOMATION_SECRET}")
+
+          echo "HTTP $HTTP_STATUS"
+          cat /tmp/tiktok_response.json
+
+          if [ "$HTTP_STATUS" != "200" ]; then
+            echo "La publicación en TikTok falló. Revisa los logs de Render (esto no afecta a Instagram/Facebook, que ya se publicaron)."
+            exit 1
+          fi
+
+          echo "TIKTOK PUBLICADO CORRECTAMENTE"
