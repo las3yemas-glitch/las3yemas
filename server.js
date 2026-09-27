@@ -511,7 +511,7 @@ app.get("/tiktok/callback", async (req, res) => {
 // la lógica compartida y ya no depende de que el token siga en memoria).
 app.get("/tiktok/test", async (req, res) => {
   try {
-    await publishToTikTok({
+    const result = await publishToTikTok({
       imageUrl:
         "https://las3yemas-glitch.github.io/las3yemas/publicidad/01_semana.jpg",
       privacyLevel: PRIVACY_LEVEL,
@@ -521,6 +521,9 @@ app.get("/tiktok/test", async (req, res) => {
       <h1>Las 3 Yemas 🥚</h1>
       <h2>✅ Publicación enviada a TikTok</h2>
       <p>Modo: ${PRIVACY_LEVEL}.</p>
+      <p>ID de publicación: ${result?.data?.publish_id || "(sin id)"}</p>
+      <p>Espera 1 minuto y revisa el resultado final:
+        <a href="/tiktok/last-status?id=${encodeURIComponent(result?.data?.publish_id || "")}">ver estado</a></p>
     `);
   } catch (err) {
     console.error("TikTok publish error:", err.message);
@@ -544,8 +547,9 @@ app.get("/tiktok/test", async (req, res) => {
 // segundo plano; "init" ok no garantiza que se haya publicado).
 app.get("/tiktok/last-status", async (req, res) => {
   try {
-    if (!lastPublishId) {
-      return res.json({ ok: false, message: "Aún no hay publicaciones desde que arrancó el servidor." });
+    const publishId = req.query.id || lastPublishId;
+    if (!publishId) {
+      return res.json({ ok: false, message: "Aún no hay publicaciones desde que arrancó el servidor. Usa /tiktok/last-status?id=<publish_id>." });
     }
     const accessToken = await getValidAccessToken();
     const r = await fetch("https://open.tiktokapis.com/v2/post/publish/status/fetch/", {
@@ -554,10 +558,10 @@ app.get("/tiktok/last-status", async (req, res) => {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json; charset=UTF-8",
       },
-      body: JSON.stringify({ publish_id: lastPublishId }),
+      body: JSON.stringify({ publish_id: publishId }),
     });
     const data = await r.json();
-    res.json({ publish_id: lastPublishId, status: data?.data?.status, fail_reason: data?.data?.fail_reason, error: data?.error?.code });
+    res.json({ publish_id: publishId, status: data?.data?.status, fail_reason: data?.data?.fail_reason, error: data?.error?.code });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
