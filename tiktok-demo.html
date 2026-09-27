@@ -17,6 +17,26 @@
     function loginTikTok() {
       alert("Conexión con TikTok - Las 3 Yemas");
     }
-  </script>
+<script>
+function loginTikTok() {
+  const clientKey = "sbawns5v9whht47tl3";
+  const redirectUri = encodeURIComponent(
+    "https://las3yemas-glitch.github.io/las3yemas/"
+  );
+
+  const state = Math.random().toString(36).substring(2);
+  sessionStorage.setItem("tiktok_oauth_state", state);
+
+  const url =
+    "https://www.tiktok.com/v2/auth/authorize/" +
+    "?client_key=" + clientKey +
+    "&scope=user.info.basic,video.upload,video.publish" +
+    "&response_type=code" +
+    "&redirect_uri=" + redirectUri +
+    "&state=" + state;
+
+  window.location.href = url;
+}
+</script>
 </body>
 </html>
