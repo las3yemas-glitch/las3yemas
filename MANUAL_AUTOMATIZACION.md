@@ -80,6 +80,19 @@ se escribió este código, revisa `api-docs.render.com` — el código está ais
 `persistRefreshTokenToRender` de `server.js` y falla de forma segura (sin cortar la publicación)
 si la llamada no funciona.
 
+### 3.2b Modo borrador (activo por defecto)
+
+Desde el 27-09-2026 el servidor usa `TIKTOK_POST_MODE=MEDIA_UPLOAD` (valor por defecto): cada día
+TikTok recibe la foto y el texto como **borrador en la bandeja de entrada** de la cuenta
+`las3yemitas`. La dueña de la cuenta abre la app de TikTok, entra a la notificación / bandeja,
+toca **Publicar** y elige "Todos". Así las publicaciones pueden ser públicas aunque la app siga
+en Sandbox. En `/tiktok/last-status` el estado final correcto de este modo es
+`SEND_TO_USER_INBOX`.
+
+Cuando TikTok apruebe la app para publicar en público, se puede volver a la publicación 100%
+automática agregando en Render `TIKTOK_POST_MODE=DIRECT_POST` y
+`TIKTOK_PRIVACY_LEVEL=PUBLIC_TO_EVERYONE`.
+
 ### 3.3 Nivel de privacidad (Sandbox vs. producción)
 
 Mientras la app de TikTok esté en modo Sandbox / "cliente no auditado", **solo se puede publicar

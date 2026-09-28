@@ -19,6 +19,14 @@ const AUTOMATION_SECRET = process.env.TIKTOK_AUTOMATION_SECRET;
 // esté en modo Sandbox / cliente no auditado, TikTok solo permite SELF_ONLY.
 const PRIVACY_LEVEL = process.env.TIKTOK_PRIVACY_LEVEL || "SELF_ONLY";
 
+// Modo de publicación:
+//  - "MEDIA_UPLOAD" (por defecto): deja la foto como borrador en la bandeja de
+//    TikTok; la dueña de la cuenta solo toca "Publicar" y elige quién la ve.
+//    Permite publicaciones públicas aunque la app siga en Sandbox.
+//  - "DIRECT_POST": publica directo (requiere app aprobada por TikTok para
+//    publicar en público; sin aprobación solo SELF_ONLY).
+const POST_MODE = (process.env.TIKTOK_POST_MODE || "MEDIA_UPLOAD").toUpperCase();
+
 // Credenciales de Render, opcionales. Si están presentes, el servidor puede
 // persistir el refresh token actualizando la variable de entorno del propio
 // servicio en Render, para no perderlo en cada reinicio/redeploy.
@@ -300,32 +308,34 @@ function getTodayImageUrl() {
 async function publishToTikTok({ imageUrl, privacyLevel }) {
   const accessToken = await getValidAccessToken();
 
-  const creatorResponse = await fetch(
-    "https://open.tiktokapis.com/v2/post/publish/creator_info/query/",
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json; charset=UTF-8",
-      },
-      body: JSON.stringify({}),
-    }
-  );
-
-  const creatorData = await creatorResponse.json();
-
-  if (!creatorResponse.ok || creatorData?.error?.code !== "ok") {
-    logSafe("tiktok:creator_info:error", { body: creatorData });
-    throw new Error("No se pudo consultar la cuenta de TikTok (creator_info).");
-  }
-
-  const privacyOptions = creatorData?.data?.privacy_level_options || [];
-
-  if (!privacyOptions.includes(privacyLevel)) {
-    throw new Error(
-      `TikTok no permite el nivel de privacidad "${privacyLevel}" para esta cuenta. ` +
-        `Opciones disponibles: ${privacyOptions.join(", ") || "ninguna"}.`
+  if (POST_MODE === "DIRECT_POST") {
+    const creatorResponse = await fetch(
+      "https://open.tiktokapis.com/v2/post/publish/creator_info/query/",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json; charset=UTF-8",
+        },
+        body: JSON.stringify({}),
+      }
     );
+
+    const creatorData = await creatorResponse.json();
+
+    if (!creatorResponse.ok || creatorData?.error?.code !== "ok") {
+      logSafe("tiktok:creator_info:error", { body: creatorData });
+      throw new Error("No se pudo consultar la cuenta de TikTok (creator_info).");
+    }
+
+    const privacyOptions = creatorData?.data?.privacy_level_options || [];
+
+    if (!privacyOptions.includes(privacyLevel)) {
+      throw new Error(
+        `TikTok no permite el nivel de privacidad "${privacyLevel}" para esta cuenta. ` +
+          `Opciones disponibles: ${privacyOptions.join(", ") || "ninguna"}.`
+      );
+    }
   }
 
   const publishResponse = await fetch(
@@ -337,19 +347,25 @@ async function publishToTikTok({ imageUrl, privacyLevel }) {
         "Content-Type": "application/json; charset=UTF-8",
       },
       body: JSON.stringify({
-        post_info: {
-          title: "Huevos frescos Las 3 Yemas 🥚",
-          description: CAPTION,
-          privacy_level: privacyLevel,
-          disable_comment: false,
-          auto_add_music: true,
-        },
+        post_info:
+          POST_MODE === "DIRECT_POST"
+            ? {
+                title: "Huevos frescos Las 3 Yemas 🥚",
+                description: CAPTION,
+                privacy_level: privacyLevel,
+                disable_comment: false,
+                auto_add_music: true,
+              }
+            : {
+                title: "Huevos frescos Las 3 Yemas 🥚",
+                description: CAPTION,
+              },
         source_info: {
           source: "PULL_FROM_URL",
           photo_cover_index: 0,
           photo_images: [imageUrl],
         },
-        post_mode: "DIRECT_POST",
+        post_mode: POST_MODE,
         media_type: "PHOTO",
       }),
     }
@@ -439,6 +455,7 @@ app.get("/tiktok/status", async (req, res) => {
     lastPersistError,
     todayImageUrl: getTodayImageUrl(),
     privacyLevel: PRIVACY_LEVEL,
+    postMode: POST_MODE,
   });
 });
 
@@ -524,7 +541,7 @@ app.get("/tiktok/test", async (req, res) => {
     res.send(`
       <h1>Las 3 Yemas 🥚</h1>
       <h2>✅ Publicación enviada a TikTok</h2>
-      <p>Modo: ${PRIVACY_LEVEL}.</p>
+      <p>Modo: ${POST_MODE === "DIRECT_POST" ? PRIVACY_LEVEL : "borrador en tu bandeja de TikTok (MEDIA_UPLOAD)"}.</p>
       <p>ID de publicación: ${result?.data?.publish_id || "(sin id)"}</p>
       <p>Espera 1 minuto y revisa el resultado final:
         <a href="/tiktok/last-status?id=${encodeURIComponent(result?.data?.publish_id || "")}">ver estado</a></p>
