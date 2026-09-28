@@ -22,8 +22,8 @@ const PRIVACY_LEVEL = process.env.TIKTOK_PRIVACY_LEVEL || "SELF_ONLY";
 // Credenciales de Render, opcionales. Si están presentes, el servidor puede
 // persistir el refresh token actualizando la variable de entorno del propio
 // servicio en Render, para no perderlo en cada reinicio/redeploy.
-const RENDER_API_KEY = process.env.RENDER_API_KEY;
-const RENDER_SERVICE_ID = process.env.RENDER_SERVICE_ID;
+const RENDER_API_KEY = (process.env.RENDER_API_KEY || "").trim().replace(/^Bearer\s+/i, "") || null;
+const RENDER_SERVICE_ID = (process.env.RENDER_SERVICE_ID || "").trim() || null;
 
 // Respaldo local opcional (solo sobrevive a reinicios simples del mismo
 // contenedor, NO a un redeploy). Se usa si no hay credenciales de Render.
@@ -114,7 +114,11 @@ async function persistRefreshTokenToRender(refreshToken) {
   );
 
   if (!getResp.ok) {
-    throw new Error(`Render GET env-vars falló: HTTP ${getResp.status}`);
+    const detail = await getResp.text().catch(() => "");
+    throw new Error(
+      `Render GET env-vars falló: HTTP ${getResp.status} ${detail.slice(0, 200)} ` +
+        `(clave: empieza con "${RENDER_API_KEY.slice(0, 4)}", largo ${RENDER_API_KEY.length}; servicio: ${RENDER_SERVICE_ID})`
+    );
   }
 
   const current = await getResp.json();
