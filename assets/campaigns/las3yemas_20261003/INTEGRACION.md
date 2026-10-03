@@ -1,8 +1,8 @@
 # Integración campaña las3yemas_20261003
 
 Commit inicial: `34d448b` (origin/main). Rama: `integracion/campana-20261003`.
-Estado: **preparada, sin activar** (`publicidad/campana-activa.json` → `"activa": false`).
-Mientras esté inactiva, el workflow publica exactamente lo mismo que antes (`publicidad/0N_semana.png` + la leyenda de siempre).
+Estado: **activada el 2026-10-03** para 2026-10-05 a 2026-10-11 (`publicidad/campana-activa.json` → `"activa": true`).
+Fuera de esas fechas, o con `"activa": false`, el workflow publica exactamente lo mismo que antes (`publicidad/0N_semana.png` + la leyenda de siempre).
 
 ## Qué publica cada canal
 

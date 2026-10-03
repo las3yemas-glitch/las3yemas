@@ -89,7 +89,7 @@ class Seleccion(Base):
             self.elegir(dt.date(2026, 10, 7), forzar_activa=True)
 
     def test_inactiva_repite_rotacion_anterior(self):
-        self.assertFalse(self.config["activa"])
+        self.config["activa"] = False
         for i in range(7):
             f = LUNES + dt.timedelta(days=i)
             d = self.elegir(f)

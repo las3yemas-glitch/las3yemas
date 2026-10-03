@@ -1,7 +1,7 @@
 {
   "campana_id": "las3yemas_20261003",
   "manifest": "assets/campaigns/las3yemas_20261003/05_Claude/manifest.json",
-  "activa": false,
+  "activa": true,
   "zona_horaria": "America/Santiago",
   "fecha_inicio": "2026-10-05",
   "fecha_fin": "2026-10-11",
