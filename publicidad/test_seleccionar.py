@@ -95,8 +95,10 @@ class Paquete(Base):
 
 
 class Seleccion(Base):
-    def test_estado_actual_sin_formatos_nuevos(self):
-        # Hasta la aprobación: solo Feed + foto TikTok, sin Stories ni Reels.
+    def test_formatos_nuevos_en_pausa(self):
+        # Con los interruptores apagados: solo Feed + foto TikTok, sin Stories ni Reels.
+        self.config["canales_story"] = []
+        self.config["reels"]["activos"] = False
         for i in range(7):
             d = self.elegir(LUNES + dt.timedelta(days=i))
             self.assertEqual(d["MODO"], "campana")
@@ -144,6 +146,7 @@ class Seleccion(Base):
             self.assertEqual(sum(d[f"PUBLICAR_REEL_{c}"] == "true" for c in ("INSTAGRAM", "FACEBOOK", "TIKTOK")), 3)
 
     def test_reels_desactivados_no_salen_aunque_esten_aprobados(self):
+        self.config["reels"]["activos"] = False
         self.config["reels"]["aprobados"] = ["L3Y-REEL-01"]
         self.assertEqual(self.elegir(dt.date(2026, 10, 6))["REEL_ID"], "")
 

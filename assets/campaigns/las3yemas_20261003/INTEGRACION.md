@@ -9,8 +9,8 @@ Repositorio `las3yemas-glitch/las3yemas`. Todo se publica desde `.github/workflo
 |---|---|---|
 | Feed IG + FB (5–11 oct) | **Activo** | `activa`, `fecha_inicio`, `fecha_fin` |
 | Foto TikTok (borrador) | **Activo** con la pieza del día | — |
-| Stories IG + FB | **En pausa hasta aprobación** | `canales_story: ["instagram", "facebook"]` |
-| Reels IG + FB + TikTok (borrador) | **En pausa hasta aprobación** | `reels.activos: true` + IDs en `reels.aprobados` |
+| Stories IG + FB (5–11 oct) | **Activo** (aprobado 3-oct) | `canales_story: ["instagram", "facebook"]` |
+| Reels IG + FB + TikTok borrador (6, 8, 10 oct) | **Activo** (vídeos y calendario aprobados 3-oct) | `reels.activos: true` + IDs en `reels.aprobados` |
 
 Fuera del 5–11 de octubre vuelve la rotación habitual `publicidad/0N_semana.png` con su leyenda.
 
