@@ -1,70 +1,85 @@
 # Integración campaña las3yemas_20261003
 
-Commit inicial: `34d448b` (origin/main). Rama: `integracion/campana-20261003`.
-Estado: **activada el 2026-10-03** para 2026-10-05 a 2026-10-11 (`publicidad/campana-activa.json` → `"activa": true`).
-Fuera de esas fechas, o con `"activa": false`, el workflow publica exactamente lo mismo que antes (`publicidad/0N_semana.png` + la leyenda de siempre).
+Repositorio `las3yemas-glitch/las3yemas`. Todo se publica desde `.github/workflows/publicidad-diaria.yml`
+(cron `0 13 * * *` = 10:00 America/Santiago en horario de verano; el día se calcula en hora de Chile).
 
-## Qué publica cada canal
+## Estado
 
-| Canal | Quién decide la pieza | Formato | Campaña |
-|---|---|---|---|
-| Instagram Feed | `publicidad-diaria.yml` → `publicidad/seleccionar.py` | PNG por URL de GitHub Pages | Sí |
-| Facebook Página | `publicidad-diaria.yml` → `publicidad/seleccionar.py` | PNG por URL de GitHub Pages | Sí |
-| Story Instagram | `publicidad-diaria.yml` (`media_type=STORIES`) | PNG 1080×1920 | Sí (permiso por comprobar en la 1.ª ejecución) |
-| Story Facebook | `publicidad-diaria.yml` (`/photo_stories`) | PNG 1080×1920 | Sí (permiso por comprobar en la 1.ª ejecución) |
-| TikTok | el workflow pide a `server.js` (Render) el JPG de `07_TikTok_JPG/` | JPG, borrador MEDIA_UPLOAD | Sí, cuando Render despliegue la nueva versión |
-| Reels Instagram | `reels.yml` (solo manual) | MP4 real + portada PNG | Cuando haya vídeo aprobado |
-
-`marketing.yml` solo imprime un texto (dispatch manual); `github/workflows/marketing.yml` está fuera de `.github` y no se ejecuta. Ninguno publica.
-
-## Calendario propuesto (revisar antes de activar)
-
-Cron sin cambios: `0 13 * * *` = 10:00 America/Santiago (UTC−3, horario de verano). El día se calcula en hora de Chile.
-
-| Fecha | Feed (IG + FB + borrador TikTok) | Story (IG + FB) |
+| Formato | Estado | Interruptor en `publicidad/campana-activa.json` |
 |---|---|---|
-| lun 2026-10-05 | L3Y-20261003-01 Frescura que llega a tu mesa | L3Y-20261003-08 |
-| mar 2026-10-06 | L3Y-20261003-02 Así empiezan los buenos días | L3Y-20261003-09 |
-| mié 2026-10-07 | L3Y-20261003-03 De Las 3 Yemas a tu puerta | L3Y-20261003-10 |
-| jue 2026-10-08 | L3Y-20261003-04 Frescura que se nota | L3Y-20261003-11 |
-| vie 2026-10-09 | L3Y-20261003-05 ¿Ya tienes huevos para el finde? | L3Y-20261003-12 |
-| sáb 2026-10-10 | L3Y-20261003-06 Sábado sabe mejor así | L3Y-20261003-13 |
-| dom 2026-10-11 | L3Y-20261003-07 Reserva los de esta semana | L3Y-20261003-14 |
+| Feed IG + FB (5–11 oct) | **Activo** | `activa`, `fecha_inicio`, `fecha_fin` |
+| Foto TikTok (borrador) | **Activo** con la pieza del día | — |
+| Stories IG + FB | **En pausa hasta aprobación** | `canales_story: ["instagram", "facebook"]` |
+| Reels IG + FB + TikTok (borrador) | **En pausa hasta aprobación** | `reels.activos: true` + IDs en `reels.aprobados` |
 
-Fuera de ese rango vuelve sola la rotación anterior. Leyendas: las del `manifest.json`, sin cambios.
+Fuera del 5–11 de octubre vuelve la rotación habitual `publicidad/0N_semana.png` con su leyenda.
 
-- **Extras** L3Y-20261003-18/19: reserva. Solo salen si se agrega una sustitución explícita, p. ej. `"sustituciones": {"2026-10-07": "L3Y-20261003-18"}`. Nunca suman publicaciones.
-- **Portadas** L3Y-20261003-15/16/17: `pendiente_video` en `campana-activa.json`. El selector no las elige.
+## Calendario propuesto (10:00 de Chile)
 
-## Riesgos y pendientes
+| Fecha | Feed IG+FB | Foto TikTok | Story IG+FB | Reel IG+FB+TikTok |
+|---|---|---|---|---|
+| lun 05 | Frescura que llega a tu mesa | ídem (JPG) | 01 frescura | — |
+| mar 06 | Así empiezan los buenos días | ídem | 02 buenos días | **L3Y-REEL-01 El sonido de la frescura** |
+| mié 07 | De Las 3 Yemas a tu puerta | ídem | 03 a tu puerta | — |
+| jue 08 | Frescura que se nota | ídem | 04 frescura que se nota | **L3Y-REEL-02 El desayuno** |
+| vie 09 | ¿Ya tienes huevos para el finde? | ídem | 05 finde | — |
+| sáb 10 | Sábado sabe mejor así | ídem | 06 sábado | **L3Y-REEL-03 Misión: no quedarse sin huevos** |
+| dom 11 | Reserva los de esta semana | ídem | 07 reserva | — |
 
-1. **Stories**: nunca se han probado con estas cuentas. Si el token no tiene permiso, solo falla ese paso (continue-on-error), el Feed sigue y el registro queda `fallido` (se reintenta en la siguiente ejecución manual del mismo día).
-2. **Reels**: no hay MP4. Para publicar uno: subir el vídeo al repo (p. ej. `assets/campaigns/las3yemas_20261003/08_Reels_MP4/01_sonido_de_la_frescura.mp4`), poner en `publicidad/campana-activa.json` → `portadas_reels.<ID>`: `"video": "<ruta>"`, `"aprobado": true`, y lanzar **Actions → Reel Las 3 Yemas → Run workflow** eligiendo la portada. Guiones en `05_Claude/INSTRUCCIONES_CLAUDE.md`.
-3. **TikTok**: `07_TikTok_JPG/` son los mismos PNG del Feed/Extras convertidos a JPG (calidad 95, mismo tamaño). Si Render aún no desplegó el nuevo `server.js`, ignora la imagen pedida y manda su `0N_semana.jpg` (comprobar `acceptsRequestedImage: true` en `/tiktok/status`). Sigue siendo borrador: hay que publicarlo desde la app.
-4. **Concurrencia**: el workflow no tiene `concurrency` (se respetó). Dos ejecuciones simultáneas podrían elegir antes de que una registre `en_curso`; en la práctica el segundo `git push` falla y detiene esa ejecución antes de publicar.
-5. Facebook y TikTok tienen `continue-on-error`: un “success” en GitHub no prueba que se publicaron. Instagram sí corta el job si falla.
+Las Stories y Reels de días ya pasados al aprobarse no se recuperan solos (el selector solo mira el día de hoy).
+
+## Archivos y requisitos comprobados (documentación oficial de Meta y TikTok, 3-oct-2026)
+
+| Uso | Archivo | Requisito | Comprobado |
+|---|---|---|---|
+| Feed IG/FB | `01_Feed/*.png` | IG documenta solo JPEG | PNG ya publicado con éxito por el workflow; no se cambió el Feed activo |
+| Story IG/FB | `09_Stories_JPG/*.jpg` | JPEG ≤ 8 MB, 9:16 (IG); FB recomienda PNG ≤ 1 MB → se usa JPG | 1080×1920, 0,34–0,48 MB |
+| Portada Reel IG | `10_Portadas_JPG/*.jpg` | JPEG ≤ 8 MB | 1080×1920 |
+| Reel | `08_Reels/*.mp4` | MP4 H.264, AAC ≤ 48 kHz, 23–60 fps, 3 s–15 min (IG) / 3–90 s (FB), moov al inicio, sin edit lists | 12/15/14 s, 30 fps, 1080×1920, AAC 128 kbps 48 kHz, sin edit lists |
+| Foto TikTok | `07_TikTok_JPG/*.jpg` | JPG desde dominio verificado | ya en uso |
+| Vídeo TikTok | `08_Reels/*.mp4` | `inbox/video/init` PULL_FROM_URL, scope `video.upload`, dominio verificado | scope ya pedido en `/tiktok/login`; dominio = el mismo de las fotos |
+
+Los MP4 del paquete se ajustaron sin recodificar el vídeo (md5 del vídeo idéntico): solo audio a 128 kbps y sin edit lists.
+Hashes originales y nuevos en `08_Reels/manifest_reels.json`. Licencias en `08_Reels/FUENTES_Y_DERECHOS.md`
+(tomas de Pexels; no presentarlas como producción propia).
+
+Sticker de enlace en Stories: la API de Instagram no lo ofrece; no se automatiza. Facebook Reels no recibe portada personalizada en esta versión (usa el fotograma que elija Facebook).
+
+## Permisos (no verificables sin usar los tokens)
+
+- Stories y Reels de Instagram: `instagram_business_content_publish` (el mismo que ya publica el Feed) y cuenta profesional.
+- Stories y Reels de Facebook: `pages_manage_posts`, `pages_read_engagement`, `pages_show_list` (el Feed de la página ya publica fotos).
+- Se comprobarán en la primera ejecución aprobada; si falta un permiso, solo falla ese paso (`continue-on-error`) y queda `fallido`.
 
 ## Registro de publicaciones
 
-`publicidad/registro-publicaciones.jsonl` (commit en el repo, no en el runner).
-Clave: `campaña|asset|canal|fecha local`; canales `instagram`, `facebook`, `instagram_story`, `facebook_story`, `tiktok`, `instagram_reel`. Estados: `preparado`, `en_curso`, `publicado` (exige ID remoto), `fallido`, `desconocido`.
-`en_curso`, `publicado` y `desconocido` bloquean otro intento ese día. Ante `desconocido`/`en_curso`: revisar Instagram/Facebook a mano; si no se publicó, agregar una línea `fallido` con `python3 publicidad/seleccionar.py registrar ... --estado fallido` antes de relanzar.
+`publicidad/registro-publicaciones.jsonl` (commit en el repo). Clave `campaña|asset|canal|formato|fecha local`.
+Estados `preparado`, `en_curso`, `publicado` (exige ID remoto), `fallido`, `desconocido`.
+`en_curso`, `publicado` y `desconocido` bloquean otro intento; ahora también en los días habituales
+(el 3-oct se publicó dos veces: ejecución manual + cron atrasado 5 h).
 
-## Activar (paso separado, requiere aprobación)
+**Resultados desconocidos**: Actions → *Revisar resultados desconocidos* → Run workflow. Solo consulta Instagram y
+Facebook (no publica). Si encuentra la publicación la marca `publicado` con su ID; si no aparece, solo la libera
+(`fallido`) si se marca la opción. TikTok y Stories de Facebook se revisan a mano.
 
-1. Confirmar fecha de inicio/fin en `publicidad/campana-activa.json`.
-2. Cambiar `"activa": true`, fusionar la rama en `main` y hacer push.
-3. Opcional: comprobar después del primer día que `registro-publicaciones.jsonl` tenga `publicado` con ID.
+## Activar lo aprobado
+
+1. Stories: `"canales_story": ["instagram", "facebook"]`.
+2. Reels: `"reels": {"activos": true, "aprobados": ["L3Y-REEL-01", ...]}` y revisar `programacion`.
+3. Commit en `main`. No hace falta tocar cron, secretos ni Render.
 
 ## Reversión
 
-- Pausar sin revertir: `"activa": false` en `publicidad/campana-activa.json` (vuelve la rotación anterior).
-- Volver el selector al commit inicial: `git checkout 34d448b -- .github/workflows/publicidad-diaria.yml` y commit. No toca secretos ni borra publicaciones remotas; los assets y el registro pueden quedar en el repo sin efecto.
+- Pausar formatos nuevos: `canales_story: []`, `reels.activos: false`.
+- Pausar campaña: `"activa": false` (vuelve la rotación habitual).
+- Volver el código al estado anterior a esta integración: `git revert <commit>` de esta rama (o
+  `git checkout 29f579c -- .github/workflows publicidad server.js`). No toca secretos, no borra publicaciones
+  remotas, ni el registro, ni imágenes antiguas. Render se redespliega solo desde `main`.
 
 ## Pruebas
 
 ```
 python3 assets/campaigns/las3yemas_20261003/05_Claude/validar_paquete.py
 python3 -m unittest publicidad/test_seleccionar.py -v
-python3 publicidad/seleccionar.py calendario --forzar-activa
+python3 publicidad/seleccionar.py calendario --forzar-nuevos
 ```

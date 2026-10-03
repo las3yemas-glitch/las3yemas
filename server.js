@@ -311,6 +311,14 @@ function requestedImageUrl(body) {
   return url;
 }
 
+function requestedVideoUrl(body) {
+  const url = typeof body?.videoUrl === "string" ? body.videoUrl.trim() : "";
+  if (!url.startsWith(IMAGE_URL_PREFIX) || !/\.mp4$/i.test(url) || url.includes("..")) {
+    return null;
+  }
+  return url;
+}
+
 function requestedCaption(body) {
   const caption = typeof body?.caption === "string" ? body.caption.trim() : "";
   return caption && caption.length <= 2000 ? caption : null;
@@ -407,6 +415,36 @@ async function publishToTikTok({ imageUrl, privacyLevel, description = CAPTION }
   return publishData;
 }
 
+// Vídeo (Reel) a la bandeja de TikTok como borrador. Solo en MEDIA_UPLOAD:
+// con DIRECT_POST se rechaza para no publicar vídeo sin una revisión aparte.
+async function sendVideoToInbox({ videoUrl }) {
+  if (POST_MODE !== "MEDIA_UPLOAD") {
+    throw new Error("Los vídeos solo se envían como borrador (TIKTOK_POST_MODE=MEDIA_UPLOAD).");
+  }
+  const accessToken = await getValidAccessToken();
+  const response = await fetch(
+    "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json; charset=UTF-8",
+      },
+      body: JSON.stringify({
+        source_info: { source: "PULL_FROM_URL", video_url: videoUrl },
+      }),
+    }
+  );
+  const data = await response.json();
+  if (!response.ok || data?.error?.code !== "ok") {
+    logSafe("tiktok:video:error", { body: data });
+    throw new Error("TikTok rechazó el vídeo. Revisa los logs de Render.");
+  }
+  lastPublishId = data?.data?.publish_id || null;
+  logSafe("tiktok:video:ok", { publish_id: lastPublishId, videoUrl });
+  return data;
+}
+
 function requireAutomationSecret(req, res, next) {
   if (!AUTOMATION_SECRET) {
     return res.status(500).json({
@@ -473,6 +511,7 @@ app.get("/tiktok/status", async (req, res) => {
     lastPersistError,
     todayImageUrl: getTodayImageUrl(),
     acceptsRequestedImage: true,
+    acceptsVideoDraft: POST_MODE === "MEDIA_UPLOAD",
     privacyLevel: PRIVACY_LEVEL,
     postMode: POST_MODE,
   });
@@ -611,6 +650,21 @@ app.get("/tiktok/last-status", async (req, res) => {
 // Requiere el header Authorization: Bearer <TIKTOK_AUTOMATION_SECRET>.
 app.post("/tiktok/publish", requireAutomationSecret, async (req, res) => {
   try {
+    if (req.body?.videoUrl !== undefined) {
+      const videoUrl = requestedVideoUrl(req.body);
+      if (!videoUrl) {
+        return res.status(400).json({ ok: false, error: "videoUrl no permitida" });
+      }
+      const result = await sendVideoToInbox({ videoUrl });
+      return res.json({
+        ok: true,
+        mediaType: "VIDEO",
+        publish_id: result?.data?.publish_id || null,
+        videoUrl,
+        postMode: POST_MODE,
+      });
+    }
+
     const imageUrl = requestedImageUrl(req.body) || getTodayImageUrl();
     const result = await publishToTikTok({
       imageUrl,
@@ -620,6 +674,7 @@ app.post("/tiktok/publish", requireAutomationSecret, async (req, res) => {
 
     res.json({
       ok: true,
+      mediaType: "PHOTO",
       publish_id: result?.data?.publish_id || null,
       imageUrl,
       privacyLevel: PRIVACY_LEVEL,

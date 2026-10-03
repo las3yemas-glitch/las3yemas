@@ -1,18 +1,19 @@
 """Selector de la pieza diaria y registro durable de publicaciones.
 
 Lo usa .github/workflows/publicidad-diaria.yml. No hace llamadas de red ni
-lee secretos: solo decide qué imagen y leyenda corresponden al día local
-(America/Santiago) y lleva el historial en publicidad/registro-publicaciones.jsonl,
-que el workflow guarda con commit en el repositorio.
+lee secretos: solo decide qué publicar el día local (America/Santiago) y lleva
+el historial en publicidad/registro-publicaciones.jsonl, que el workflow guarda
+con commit en el repositorio.
 
 Subcomandos:
   elegir      [--fecha AAAA-MM-DD] [--github-output]
-  registrar   --canal C --estado E [--remote-id ID] [--detalle TXT] --asset A --fecha F
-  calendario  [--desde AAAA-MM-DD] [--dias 7] [--forzar-activa]
-  reel        --asset ID_PORTADA [--fecha AAAA-MM-DD] [--github-output]   (lo usa reels.yml)
+  iniciar     --fecha F --pendientes "campana|asset|canal|formato ..."
+  registrar   --campana C --asset A --canal C --formato F --fecha F --estado E [--remote-id ID] [--detalle TXT]
+  pendientes  lista las claves en_curso o desconocido (para conciliar.py)
+  calendario  [--desde AAAA-MM-DD] [--dias 7] [--forzar-activa] [--forzar-nuevos]
 
-Canales del registro: instagram, facebook, instagram_story, facebook_story,
-tiktok (borrador en la bandeja de TikTok) e instagram_reel.
+Clave del registro: campaña|asset|canal|formato|fecha local.
+Canales: instagram, facebook, tiktok. Formatos: feed, story, reel.
 """
 import argparse
 import datetime as dt
@@ -27,7 +28,8 @@ RAIZ = Path(__file__).resolve().parent.parent
 CONFIG = Path(os.environ.get("PUBLICIDAD_CONFIG", RAIZ / "publicidad/campana-activa.json"))
 REGISTRO = Path(os.environ.get("PUBLICIDAD_REGISTRO", RAIZ / "publicidad/registro-publicaciones.jsonl"))
 
-# Rotación histórica (igual que el case del workflow antes de la campaña).
+# Rotación habitual (igual que el case del workflow antes de la campaña).
+CAMPANA_HABITUAL = "habitual"
 IMAGEN_HISTORICA = "publicidad/{:02d}_semana.png"
 LEYENDA_HISTORICA = (
     "🥚 Las 3 Yemas 💗 Huevos frescos y contenido útil para ti. 🚚 Repartimos en "
@@ -36,8 +38,10 @@ LEYENDA_HISTORICA = (
 
 ESTADOS = ("preparado", "en_curso", "publicado", "fallido", "desconocido")
 # Estados que impiden volver a publicar la misma clave. "desconocido" y
-# "en_curso" exigen revisar el historial remoto antes de reintentar a mano.
+# "en_curso" exigen revisar el historial remoto (conciliar.py) antes de reintentar.
 BLOQUEAN = {"en_curso", "publicado", "desconocido"}
+CANALES = ("instagram", "facebook", "tiktok")
+FORMATOS = ("feed", "story", "reel")
 
 
 def cargar_config(ruta=CONFIG):
@@ -48,6 +52,10 @@ def cargar_manifest(config):
     return json.loads((RAIZ / config["manifest"]).read_text(encoding="utf-8"))
 
 
+def cargar_reels(config):
+    return json.loads((RAIZ / config["reels"]["manifest"]).read_text(encoding="utf-8"))
+
+
 def carpeta_campana(config):
     # manifest.json vive en <campaña>/05_Claude/
     return (RAIZ / config["manifest"]).parent.parent
@@ -55,6 +63,14 @@ def carpeta_campana(config):
 
 def ruta_asset(config, asset):
     return (carpeta_campana(config) / asset["file"]).relative_to(RAIZ).as_posix()
+
+
+def ruta_jpg(config, asset, carpeta):
+    """JPG equivalente del PNG (Instagram y TikTok foto solo aceptan JPEG)."""
+    jpg = carpeta_campana(config) / carpeta / (Path(asset["file"]).stem + ".jpg")
+    if not jpg.is_file():
+        raise FileNotFoundError(f"Falta el JPG: {jpg}")
+    return jpg.relative_to(RAIZ).as_posix()
 
 
 def fecha_local(ahora=None, zona="America/Santiago"):
@@ -70,8 +86,18 @@ def campana_vigente(config, fecha, forzar_activa=False):
     return inicio <= fecha <= fin
 
 
-def clave(campana, asset_id, canal, fecha):
-    return f"{campana}|{asset_id}|{canal}|{fecha.isoformat()}"
+def clave(campana, asset_id, canal, formato, fecha):
+    return f"{campana}|{asset_id}|{canal}|{formato}|{fecha.isoformat()}"
+
+
+def _normalizar(fila):
+    """Filas escritas antes de existir 'formato' (canal instagram_story, etc.)."""
+    if "formato" not in fila:
+        canal, _, formato = fila["canal"].partition("_")
+        fila = dict(fila, canal=canal, formato=formato or "feed")
+        fila["clave"] = clave(fila["campana"], fila["asset_id"], fila["canal"], fila["formato"],
+                              dt.date.fromisoformat(fila["fecha_local"]))
+    return fila
 
 
 def leer_registro(ruta=REGISTRO):
@@ -81,22 +107,25 @@ def leer_registro(ruta=REGISTRO):
     if ruta.exists():
         for linea in ruta.read_text(encoding="utf-8").splitlines():
             if linea.strip():
-                fila = json.loads(linea)
+                fila = _normalizar(json.loads(linea))
                 estados[fila["clave"]] = fila
     return estados
 
 
-def registrar(campana, asset_id, canal, fecha, estado, remote_id="", detalle="",
+def registrar(campana, asset_id, canal, formato, fecha, estado, remote_id="", detalle="",
               ruta=REGISTRO):
     if estado not in ESTADOS:
         raise ValueError(f"Estado inválido: {estado}")
+    if canal not in CANALES or formato not in FORMATOS:
+        raise ValueError(f"Canal/formato inválido: {canal}/{formato}")
     if estado == "publicado" and not remote_id:
         raise ValueError("'publicado' exige el ID remoto de la publicación")
     fila = {
-        "clave": clave(campana, asset_id, canal, fecha),
+        "clave": clave(campana, asset_id, canal, formato, fecha),
         "campana": campana,
         "asset_id": asset_id,
         "canal": canal,
+        "formato": formato,
         "fecha_local": fecha.isoformat(),
         "estado": estado,
         "remote_id": remote_id or None,
@@ -109,101 +138,107 @@ def registrar(campana, asset_id, canal, fecha, estado, remote_id="", detalle="",
     return fila
 
 
-def elegir(fecha, config=None, ruta_registro=REGISTRO, forzar_activa=False):
+def elegir(fecha, config=None, ruta_registro=REGISTRO, forzar_activa=False, forzar_nuevos=False):
+    """forzar_nuevos solo existe para pruebas/calendario: simula Stories y Reels aprobados."""
     config = config or cargar_config()
     dia = fecha.isoweekday()  # 1 = lunes ... 7 = domingo
+    estados = leer_registro(ruta_registro)
+    pendientes = []
+
+    def decidir(habilitado, campana, asset_id, canal, formato):
+        previo = estados.get(clave(campana, asset_id, canal, formato, fecha))
+        ok = habilitado and (previo is None or previo["estado"] not in BLOQUEAN)
+        if ok:
+            pendientes.append(f"{campana}|{asset_id}|{canal}|{formato}")
+        return "true" if ok else "false"
+
+    salida = {"FECHA_LOCAL": fecha.isoformat()}
     if not campana_vigente(config, fecha, forzar_activa):
-        return {
+        campana, asset = CAMPANA_HABITUAL, f"{dia:02d}_semana"
+        salida.update({
             "MODO": "historico",
-            "FECHA_LOCAL": fecha.isoformat(),
             "IMAGEN": IMAGEN_HISTORICA.format(dia),
             "CAPTION": LEYENDA_HISTORICA,
-            "CAMPANA": "",
-            "ASSET_ID": "",
+            "CAMPANA": campana,
+            "ASSET_ID": asset,
             "STORY": "",
             "STORY_ID": "",
             "TIKTOK_IMAGEN": "",
-            "PUBLICAR_INSTAGRAM": "true",
-            "PUBLICAR_FACEBOOK": "true",
+            "PUBLICAR_INSTAGRAM": decidir(True, campana, asset, "instagram", "feed"),
+            "PUBLICAR_FACEBOOK": decidir(True, campana, asset, "facebook", "feed"),
             "PUBLICAR_STORY_INSTAGRAM": "false",
             "PUBLICAR_STORY_FACEBOOK": "false",
-            "PUBLICAR_TIKTOK": "true",
-        }
+            "PUBLICAR_TIKTOK": decidir(True, campana, asset, "tiktok", "feed"),
+        })
+    else:
+        manifest = cargar_manifest(config)
+        por_id = {a["id"]: a for a in manifest["assets"]}
+        feed = next(a for a in manifest["assets"] if a["type"] == "feed" and a["day"] == dia)
+        story = next(a for a in manifest["assets"] if a["type"] == "story" and a["day"] == dia)
 
-    manifest = cargar_manifest(config)
-    por_id = {a["id"]: a for a in manifest["assets"]}
-    feed = next(a for a in manifest["assets"] if a["type"] == "feed" and a["day"] == dia)
-    story = next(a for a in manifest["assets"] if a["type"] == "story" and a["day"] == dia)
+        # Sustitución explícita (p. ej. un extra comercial) solo si está configurada.
+        sustituto = config.get("sustituciones", {}).get(fecha.isoformat())
+        if sustituto:
+            feed = por_id[sustituto]
+            if feed["type"] not in ("feed", "commercial_extra"):
+                raise ValueError(f"{sustituto} no es una pieza de Feed")
 
-    # Sustitución explícita (p. ej. un extra comercial) solo si está configurada.
-    sustituto = config.get("sustituciones", {}).get(fecha.isoformat())
-    if sustituto:
-        feed = por_id[sustituto]
-        if feed["type"] not in ("feed", "commercial_extra"):
-            raise ValueError(f"{sustituto} no es una pieza de Feed")
+        campana = config["campana_id"]
+        canales_story = ["instagram", "facebook"] if forzar_nuevos else config.get("canales_story", [])
+        salida.update({
+            "MODO": "campana",
+            "IMAGEN": ruta_asset(config, feed),
+            "CAPTION": feed["caption"],
+            "CAMPANA": campana,
+            "ASSET_ID": feed["id"],
+            "STORY": ruta_jpg(config, story, "09_Stories_JPG"),
+            "STORY_ID": story["id"],
+            "TIKTOK_IMAGEN": ruta_jpg(config, feed, "07_TikTok_JPG"),
+        })
+        for canal in ("instagram", "facebook"):
+            salida[f"PUBLICAR_{canal.upper()}"] = decidir(
+                canal in config.get("canales_feed", []), campana, feed["id"], canal, "feed")
+        for canal in ("instagram", "facebook"):
+            salida[f"PUBLICAR_STORY_{canal.upper()}"] = decidir(
+                canal in canales_story, campana, story["id"], canal, "story")
+        salida["PUBLICAR_TIKTOK"] = decidir(True, campana, feed["id"], "tiktok", "feed")
 
-    campana = config["campana_id"]
-    estados = leer_registro(ruta_registro)
-    salida = {
-        "MODO": "campana",
-        "FECHA_LOCAL": fecha.isoformat(),
-        "IMAGEN": ruta_asset(config, feed),
-        "CAPTION": feed["caption"],
-        "CAMPANA": campana,
-        "ASSET_ID": feed["id"],
-        "STORY": ruta_asset(config, story),
-        "STORY_ID": story["id"],
-        "TIKTOK_IMAGEN": ruta_tiktok(config, feed),
-    }
-
-    def libre(asset_id, canal):
-        previo = estados.get(clave(campana, asset_id, canal, fecha))
-        return previo is None or previo["estado"] not in BLOQUEAN
-
-    def bandera(ok):
-        return "true" if ok else "false"
-
-    for canal in ("instagram", "facebook"):
-        habilitado = canal in config.get("canales_feed", [])
-        salida[f"PUBLICAR_{canal.upper()}"] = bandera(habilitado and libre(feed["id"], canal))
-        habilitado = canal in config.get("canales_story", [])
-        salida[f"PUBLICAR_STORY_{canal.upper()}"] = bandera(habilitado and libre(story["id"], f"{canal}_story"))
-    # TikTok: el servidor de Render publica la imagen que se le pida (JPG).
-    salida["PUBLICAR_TIKTOK"] = bandera(libre(feed["id"], "tiktok"))
+    salida.update(elegir_reel(fecha, config, decidir, forzar_nuevos))
+    salida["PENDIENTES"] = " ".join(pendientes)
     return salida
 
 
-def ruta_tiktok(config, asset):
-    """JPG equivalente (TikTok foto no acepta PNG)."""
-    jpg = carpeta_campana(config) / "07_TikTok_JPG" / (Path(asset["file"]).stem + ".jpg")
-    if not jpg.is_file():
-        raise FileNotFoundError(f"Falta el JPG para TikTok: {jpg}")
-    return jpg.relative_to(RAIZ).as_posix()
+def programacion_reels(config, forzar_nuevos=False):
+    reels = config.get("reels", {})
+    if forzar_nuevos:
+        return reels.get("programacion", {}), set(reels.get("programacion", {}).values())
+    if not reels.get("activos"):
+        return {}, set()
+    return reels.get("programacion", {}), set(reels.get("aprobados", []))
 
 
-def preparar_reel(asset_id, fecha, config=None, ruta_registro=REGISTRO):
-    """Datos para publicar un Reel con su portada. Solo con vídeo real aprobado."""
-    config = config or cargar_config()
-    manifest = cargar_manifest(config)
-    portada = next((a for a in manifest["assets"] if a["id"] == asset_id), None)
-    if portada is None or portada["type"] != "reel_cover":
-        raise ValueError(f"{asset_id} no es una portada de Reel")
-    datos = config.get("portadas_reels", {}).get(asset_id, {})
-    video = datos.get("video")
-    if not video or not datos.get("aprobado"):
-        raise ValueError(f"{asset_id}: falta vídeo aprobado (video + aprobado=true en campana-activa.json)")
-    ruta_video = RAIZ / video
-    if not ruta_video.is_file() or ruta_video.suffix.lower() != ".mp4":
-        raise ValueError(f"{asset_id}: el vídeo {video} no existe o no es MP4")
-    previo = leer_registro(ruta_registro).get(clave(config["campana_id"], asset_id, "instagram_reel", fecha))
-    return {
-        "FECHA_LOCAL": fecha.isoformat(),
-        "ASSET_ID": asset_id,
-        "VIDEO": ruta_video.relative_to(RAIZ).as_posix(),
-        "PORTADA": ruta_asset(config, portada),
-        "CAPTION": datos.get("caption") or portada["caption"],
-        "PUBLICAR_REEL": "true" if previo is None or previo["estado"] not in BLOQUEAN else "false",
-    }
+def elegir_reel(fecha, config, decidir, forzar_nuevos=False):
+    """Reel programado para esa fecha, solo si los Reels están activos y aprobados."""
+    vacio = {"REEL_CAMPANA": "", "REEL_ID": "", "REEL_VIDEO": "", "REEL_PORTADA": "", "REEL_CAPTION": "",
+             "PUBLICAR_REEL_INSTAGRAM": "false", "PUBLICAR_REEL_FACEBOOK": "false",
+             "PUBLICAR_REEL_TIKTOK": "false"}
+    programacion, aprobados = programacion_reels(config, forzar_nuevos)
+    reel_id = programacion.get(fecha.isoformat())
+    if not reel_id or reel_id not in aprobados:
+        return vacio
+    reels = cargar_reels(config)
+    reel = next(r for r in reels["assets"] if r["id"] == reel_id)
+    campana = reels["campaign_id"]
+    canales = ["instagram", "facebook", "tiktok"] if forzar_nuevos else config["reels"].get("canales", [])
+    salida = {"REEL_CAMPANA": campana, "REEL_ID": reel_id, "REEL_VIDEO": reel["file"],
+              "REEL_PORTADA": reel["cover_jpg"], "REEL_CAPTION": reel["caption"]}
+    for canal in ("instagram", "facebook", "tiktok"):
+        salida[f"PUBLICAR_REEL_{canal.upper()}"] = decidir(canal in canales, campana, reel_id, canal, "reel")
+    return salida
+
+
+def pendientes_de_revision(ruta=REGISTRO):
+    return [f for f in leer_registro(ruta).values() if f["estado"] in ("en_curso", "desconocido")]
 
 
 def escribir_github_output(datos):
@@ -223,47 +258,59 @@ def main(argv=None):
     e.add_argument("--fecha")
     e.add_argument("--github-output", action="store_true")
 
+    i = sub.add_parser("iniciar")
+    i.add_argument("--fecha", required=True)
+    i.add_argument("--pendientes", default="")
+
     r = sub.add_parser("registrar")
-    r.add_argument("--canal", required=True)
-    r.add_argument("--estado", required=True, choices=ESTADOS)
+    r.add_argument("--campana", required=True)
     r.add_argument("--asset", required=True)
+    r.add_argument("--canal", required=True, choices=CANALES)
+    r.add_argument("--formato", required=True, choices=FORMATOS)
     r.add_argument("--fecha", required=True)
+    r.add_argument("--estado", required=True, choices=ESTADOS)
     r.add_argument("--remote-id", default="")
     r.add_argument("--detalle", default="")
+
+    sub.add_parser("pendientes")
 
     c = sub.add_parser("calendario")
     c.add_argument("--desde")
     c.add_argument("--dias", type=int, default=7)
     c.add_argument("--forzar-activa", action="store_true")
-
-    rl = sub.add_parser("reel")
-    rl.add_argument("--asset", required=True)
-    rl.add_argument("--fecha")
-    rl.add_argument("--github-output", action="store_true")
+    c.add_argument("--forzar-nuevos", action="store_true")
 
     a = p.parse_args(argv)
     config = cargar_config()
 
-    if a.cmd in ("elegir", "reel"):
+    if a.cmd == "elegir":
         fecha = dt.date.fromisoformat(a.fecha) if a.fecha else fecha_local(zona=config["zona_horaria"])
-        datos = elegir(fecha, config) if a.cmd == "elegir" else preparar_reel(a.asset, fecha, config)
+        datos = elegir(fecha, config)
         if a.github_output:
             escribir_github_output(datos)
         for k, v in datos.items():
             print(f"{k}={v}")
+    elif a.cmd == "iniciar":
+        fecha = dt.date.fromisoformat(a.fecha)
+        for item in a.pendientes.split():
+            campana, asset, canal, formato = item.split("|")
+            fila = registrar(campana, asset, canal, formato, fecha, "en_curso")
+            print(f"{fila['clave']} -> en_curso")
     elif a.cmd == "registrar":
-        fila = registrar(config["campana_id"], a.asset, a.canal,
-                         dt.date.fromisoformat(a.fecha), a.estado, a.remote_id, a.detalle)
+        fila = registrar(a.campana, a.asset, a.canal, a.formato, dt.date.fromisoformat(a.fecha),
+                         a.estado, a.remote_id, a.detalle)
         print(f"{fila['clave']} -> {fila['estado']}")
+    elif a.cmd == "pendientes":
+        for f in pendientes_de_revision():
+            print(json.dumps(f, ensure_ascii=False))
     elif a.cmd == "calendario":
         desde = dt.date.fromisoformat(a.desde or config["fecha_inicio"])
-        for i in range(a.dias):
-            f = desde + dt.timedelta(days=i)
-            d = elegir(f, config, forzar_activa=a.forzar_activa)
-            print(f"{f.isoformat()} {f.strftime('%a')} {d['MODO']:9} feed={d['IMAGEN']} "
-                  f"story={d['STORY'] or '-'} IG={d['PUBLICAR_INSTAGRAM']} FB={d['PUBLICAR_FACEBOOK']} "
-                  f"storyIG={d['PUBLICAR_STORY_INSTAGRAM']} storyFB={d['PUBLICAR_STORY_FACEBOOK']} "
-                  f"tiktok={d['TIKTOK_IMAGEN'] or 'imagen del servidor'}")
+        for n in range(a.dias):
+            f = desde + dt.timedelta(days=n)
+            d = elegir(f, config, forzar_activa=a.forzar_activa, forzar_nuevos=a.forzar_nuevos)
+            print(f"{f.isoformat()} {f.strftime('%a')} {d['MODO']:9} feed={Path(d['IMAGEN']).name} "
+                  f"story={Path(d['STORY']).name if d['STORY'] else '-'} reel={d['REEL_ID'] or '-'} "
+                  f"| {d['PENDIENTES'].replace(d['CAMPANA'] + '|', '')}")
 
 
 if __name__ == "__main__":

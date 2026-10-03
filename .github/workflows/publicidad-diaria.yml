@@ -28,26 +28,16 @@ jobs:
           cp "${{ steps.contenido.outputs.IMAGEN }}" "publicidad/instagram-${GITHUB_RUN_ID}.png"
 
       - name: Guardar imagen
+        id: guardar
+        env:
+          PENDIENTES: ${{ steps.contenido.outputs.PENDIENTES }}
         run: |
           git config user.name "Las 3 Yemas Bot"
           git config user.email "bot@las3yemas.cl"
           git add "publicidad/instagram-${GITHUB_RUN_ID}.png"
-          if [ "${{ steps.contenido.outputs.MODO }}" = "campana" ]; then
-            FEED="${{ steps.contenido.outputs.ASSET_ID }}"; STORY="${{ steps.contenido.outputs.STORY_ID }}"
-            FECHA="${{ steps.contenido.outputs.FECHA_LOCAL }}"
-            for FILA in \
-              "instagram $FEED ${{ steps.contenido.outputs.PUBLICAR_INSTAGRAM }}" \
-              "facebook $FEED ${{ steps.contenido.outputs.PUBLICAR_FACEBOOK }}" \
-              "instagram_story $STORY ${{ steps.contenido.outputs.PUBLICAR_STORY_INSTAGRAM }}" \
-              "facebook_story $STORY ${{ steps.contenido.outputs.PUBLICAR_STORY_FACEBOOK }}" \
-              "tiktok $FEED ${{ steps.contenido.outputs.PUBLICAR_TIKTOK }}"; do
-              set -- $FILA
-              if [ "$3" = "true" ]; then
-                python3 publicidad/seleccionar.py registrar --canal "$1" --estado en_curso --asset "$2" --fecha "$FECHA"
-              fi
-            done
-            if [ -f publicidad/registro-publicaciones.jsonl ]; then git add publicidad/registro-publicaciones.jsonl; fi
-          fi
+          # Registro durable: cada publicación queda "en_curso" antes de llamar a la red.
+          python3 publicidad/seleccionar.py iniciar --fecha "${{ steps.contenido.outputs.FECHA_LOCAL }}" --pendientes "$PENDIENTES"
+          if [ -f publicidad/registro-publicaciones.jsonl ]; then git add publicidad/registro-publicaciones.jsonl; fi
           git commit -m "Publicidad diaria Las 3 Yemas" || true
           git push
 
@@ -269,6 +259,128 @@ jobs:
             exit 1
           fi
 
+      # Reels (solo con vídeo aprobado y fecha programada). Pasos independientes.
+      - name: Publicar Reel en Instagram
+        id: reel_instagram
+        if: steps.contenido.outputs.PUBLICAR_REEL_INSTAGRAM == 'true'
+        continue-on-error: true
+        env:
+          ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          VIDEO_URL: https://las3yemas-glitch.github.io/las3yemas/${{ steps.contenido.outputs.REEL_VIDEO }}
+          COVER_URL: https://las3yemas-glitch.github.io/las3yemas/${{ steps.contenido.outputs.REEL_PORTADA }}
+          CAPTION: ${{ steps.contenido.outputs.REEL_CAPTION }}
+        run: |
+          IG_USER_ID=$(curl -s \
+            "https://graph.instagram.com/me?fields=id&access_token=${ACCESS_TOKEN}" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
+          if [ -z "$IG_USER_ID" ]; then
+            echo "ESTADO=fallido" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          RESPONSE=$(curl -s -X POST \
+            "https://graph.instagram.com/${IG_USER_ID}/media" \
+            -d "media_type=REELS" \
+            -d "video_url=${VIDEO_URL}" \
+            -d "cover_url=${COVER_URL}" \
+            -d "share_to_feed=true" \
+            --data-urlencode "caption=${CAPTION}" \
+            -d "access_token=${ACCESS_TOKEN}")
+          echo "$RESPONSE"
+          CREATION_ID=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
+          if [ -z "$CREATION_ID" ]; then
+            echo "ESTADO=fallido" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          # Instagram procesa el vídeo antes de permitir publicarlo.
+          for i in $(seq 1 10); do
+            sleep 30
+            ESTADO_IG=$(curl -s "https://graph.instagram.com/${CREATION_ID}?fields=status_code&access_token=${ACCESS_TOKEN}" \
+              | python3 -c "import sys,json; print(json.load(sys.stdin).get('status_code',''))")
+            echo "Procesando ($i): $ESTADO_IG"
+            [ "$ESTADO_IG" = "FINISHED" ] && break
+            if [ "$ESTADO_IG" = "ERROR" ] || [ "$i" = "10" ]; then
+              echo "ESTADO=fallido" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+          done
+
+          PUBLISH_RESPONSE=$(curl -s -X POST \
+            "https://graph.instagram.com/${IG_USER_ID}/media_publish" \
+            -d "creation_id=${CREATION_ID}" \
+            -d "access_token=${ACCESS_TOKEN}")
+          echo "$PUBLISH_RESPONSE"
+          PUBLISH_ID=$(echo "$PUBLISH_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
+          if [ -z "$PUBLISH_ID" ]; then
+            echo "ESTADO=desconocido" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "ESTADO=publicado" >> "$GITHUB_OUTPUT"
+          echo "REMOTE_ID=$PUBLISH_ID" >> "$GITHUB_OUTPUT"
+          echo "REEL DE INSTAGRAM PUBLICADO"
+
+      - name: Publicar Reel en Facebook
+        id: reel_facebook
+        if: steps.contenido.outputs.PUBLICAR_REEL_FACEBOOK == 'true'
+        continue-on-error: true
+        env:
+          FACEBOOK_PAGE_ACCESS_TOKEN: ${{ secrets.FACEBOOK_PAGE_ACCESS_TOKEN }}
+          VIDEO_URL: https://las3yemas-glitch.github.io/las3yemas/${{ steps.contenido.outputs.REEL_VIDEO }}
+          CAPTION: ${{ steps.contenido.outputs.REEL_CAPTION }}
+        run: |
+          PAGE_ID=1349788938213993
+          TOKEN="$FACEBOOK_PAGE_ACCESS_TOKEN"
+          PT=$(curl -s "https://graph.facebook.com/v26.0/${PAGE_ID}?fields=access_token&access_token=${TOKEN}" \
+            | python3 -c "import sys,json
+          try: print(json.load(sys.stdin).get('access_token',''))
+          except Exception: print('')")
+          if [ -n "$PT" ]; then
+            echo "::add-mask::$PT"
+            TOKEN="$PT"
+          fi
+          campo() { python3 -c "import sys,json
+          try: print(json.load(sys.stdin).get('$1',''))
+          except Exception: print('')"; }
+
+          # 1) iniciar, 2) Facebook descarga el MP4 desde la URL pública, 3) publicar.
+          START=$(curl -s -X POST "https://graph.facebook.com/v26.0/${PAGE_ID}/video_reels" \
+            -d "upload_phase=start" -d "access_token=${TOKEN}")
+          echo "$START"
+          VIDEO_ID=$(echo "$START" | campo video_id)
+          if [ -z "$VIDEO_ID" ]; then
+            echo "ESTADO=fallido" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          UPLOAD=$(curl -s -X POST "https://rupload.facebook.com/video-upload/v26.0/${VIDEO_ID}" \
+            -H "Authorization: OAuth ${TOKEN}" \
+            -H "file_url: ${VIDEO_URL}")
+          echo "$UPLOAD"
+          if [ "$(echo "$UPLOAD" | campo success)" != "True" ]; then
+            echo "ESTADO=fallido" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          FINISH=$(curl -s -X POST "https://graph.facebook.com/v26.0/${PAGE_ID}/video_reels" \
+            -d "upload_phase=finish" \
+            -d "video_id=${VIDEO_ID}" \
+            -d "video_state=PUBLISHED" \
+            --data-urlencode "description=${CAPTION}" \
+            -d "access_token=${TOKEN}")
+          echo "$FINISH"
+          if [ "$(echo "$FINISH" | campo success)" = "True" ]; then
+            echo "ESTADO=publicado" >> "$GITHUB_OUTPUT"
+            echo "REMOTE_ID=$VIDEO_ID" >> "$GITHUB_OUTPUT"
+            echo "REEL DE FACEBOOK ENVIADO"
+          elif echo "$FINISH" | grep -q '"error"'; then
+            echo "ESTADO=fallido" >> "$GITHUB_OUTPUT"
+            exit 1
+          else
+            echo "ESTADO=desconocido" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
       # No debe romper el job si falla: Instagram y Facebook ya se
       # publicaron en los pasos anteriores independientemente del resultado
       # de este paso.
@@ -327,13 +439,56 @@ jobs:
 
           echo "TIKTOK PUBLICADO CORRECTAMENTE"
 
-      # Registro durable (solo en campaña). "publicado" exige ID remoto; si el
-      # paso no dejó estado queda "desconocido" y no se reintenta solo.
-      - name: Registrar resultado de la campaña
-        if: always() && steps.contenido.outputs.MODO == 'campana'
+      - name: Enviar Reel a TikTok (borrador)
+        id: reel_tiktok
+        if: steps.contenido.outputs.PUBLICAR_REEL_TIKTOK == 'true'
+        continue-on-error: true
+        env:
+          TIKTOK_AUTOMATION_SECRET: ${{ secrets.TIKTOK_AUTOMATION_SECRET }}
+          RENDER_TIKTOK_URL: ${{ vars.RENDER_TIKTOK_URL }}
+          REEL_VIDEO: ${{ steps.contenido.outputs.REEL_VIDEO }}
+        run: |
+          URL="$RENDER_TIKTOK_URL"
+          case "$URL" in
+            https://*) ;;
+            *) URL="https://las3yemas-tiktok.onrender.com" ;;
+          esac
+          BODY=$(python3 -c "import json,os; print(json.dumps({'videoUrl': 'https://las3yemas-glitch.github.io/las3yemas/' + os.environ['REEL_VIDEO']}))")
+          HTTP_STATUS=$(curl -s --max-time 120 -o /tmp/tiktok_reel.json -w "%{http_code}" -X POST \
+            "${URL%/}/tiktok/publish" \
+            -H "Authorization: Bearer ${TIKTOK_AUTOMATION_SECRET}" \
+            -H "Content-Type: application/json" \
+            -d "$BODY") || true
+          echo "HTTP $HTTP_STATUS"
+          cat /tmp/tiktok_reel.json || true
+          if [ "$HTTP_STATUS" != "200" ]; then
+            if [ "$HTTP_STATUS" = "000" ]; then
+              echo "ESTADO=desconocido" >> "$GITHUB_OUTPUT"
+            else
+              echo "ESTADO=fallido" >> "$GITHUB_OUTPUT"
+            fi
+            exit 1
+          fi
+          RESULTADO=$(python3 -c "import json; d=json.load(open('/tmp/tiktok_reel.json')); print(d.get('publish_id') or '', d.get('mediaType') or '')" || true)
+          set -- $RESULTADO
+          if [ -n "$1" ] && [ "$2" = "VIDEO" ]; then
+            echo "ESTADO=publicado" >> "$GITHUB_OUTPUT"
+            echo "REMOTE_ID=$1" >> "$GITHUB_OUTPUT"
+            echo "REEL ENVIADO A LA BANDEJA DE TIKTOK"
+          else
+            # Servidor sin soporte de vídeo (versión antigua) o sin publish_id.
+            echo "ESTADO=desconocido" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+      # Registro durable. "publicado" exige ID remoto; si el paso no dejó
+      # estado queda "desconocido" y no se reintenta solo (ver conciliar.py).
+      - name: Registrar resultado
+        # Solo si "en_curso" llegó al repositorio; si no, no hay nada que cerrar.
+        if: always() && steps.guardar.outcome == 'success'
         run: |
           registrar() {
-            CANAL="$1"; ASSET="$2"; PUB="$3"; OUTCOME="$4"; ESTADO="$5"; RID="$6"
+            CAMPANA="$1"; ASSET="$2"; CANAL="$3"; FORMATO="$4"; PUB="$5"; OUTCOME="$6"; ESTADO="$7"; RID="$8"
             [ "$PUB" = "true" ] || return 0
             if [ "$OUTCOME" = "skipped" ]; then
               ESTADO="fallido"; DET="paso no ejecutado"
@@ -341,16 +496,21 @@ jobs:
               ESTADO="${ESTADO:-desconocido}"; DET="outcome=$OUTCOME"
             fi
             if [ "$ESTADO" = "publicado" ] && [ -z "$RID" ]; then ESTADO="desconocido"; fi
-            python3 publicidad/seleccionar.py registrar --canal "$CANAL" --estado "$ESTADO" \
-              --remote-id "$RID" --detalle "$DET" \
-              --asset "$ASSET" --fecha "${{ steps.contenido.outputs.FECHA_LOCAL }}"
+            python3 publicidad/seleccionar.py registrar --campana "$CAMPANA" --asset "$ASSET" \
+              --canal "$CANAL" --formato "$FORMATO" --estado "$ESTADO" \
+              --remote-id "$RID" --detalle "$DET" --fecha "${{ steps.contenido.outputs.FECHA_LOCAL }}"
           }
-          FEED="${{ steps.contenido.outputs.ASSET_ID }}"; STORY="${{ steps.contenido.outputs.STORY_ID }}"
-          registrar instagram "$FEED" "${{ steps.contenido.outputs.PUBLICAR_INSTAGRAM }}" "${{ steps.instagram.outcome }}" "${{ steps.instagram.outputs.ESTADO }}" "${{ steps.instagram.outputs.REMOTE_ID }}"
-          registrar facebook "$FEED" "${{ steps.contenido.outputs.PUBLICAR_FACEBOOK }}" "${{ steps.facebook.outcome }}" "${{ steps.facebook.outputs.ESTADO }}" "${{ steps.facebook.outputs.REMOTE_ID }}"
-          registrar instagram_story "$STORY" "${{ steps.contenido.outputs.PUBLICAR_STORY_INSTAGRAM }}" "${{ steps.story_instagram.outcome }}" "${{ steps.story_instagram.outputs.ESTADO }}" "${{ steps.story_instagram.outputs.REMOTE_ID }}"
-          registrar facebook_story "$STORY" "${{ steps.contenido.outputs.PUBLICAR_STORY_FACEBOOK }}" "${{ steps.story_facebook.outcome }}" "${{ steps.story_facebook.outputs.ESTADO }}" "${{ steps.story_facebook.outputs.REMOTE_ID }}"
-          registrar tiktok "$FEED" "${{ steps.contenido.outputs.PUBLICAR_TIKTOK }}" "${{ steps.tiktok.outcome }}" "${{ steps.tiktok.outputs.ESTADO }}" "${{ steps.tiktok.outputs.REMOTE_ID }}"
+          C="${{ steps.contenido.outputs.CAMPANA }}"; FEED="${{ steps.contenido.outputs.ASSET_ID }}"
+          STORY="${{ steps.contenido.outputs.STORY_ID }}"
+          RC="${{ steps.contenido.outputs.REEL_CAMPANA }}"; REEL="${{ steps.contenido.outputs.REEL_ID }}"
+          registrar "$C" "$FEED" instagram feed "${{ steps.contenido.outputs.PUBLICAR_INSTAGRAM }}" "${{ steps.instagram.outcome }}" "${{ steps.instagram.outputs.ESTADO }}" "${{ steps.instagram.outputs.REMOTE_ID }}"
+          registrar "$C" "$FEED" facebook feed "${{ steps.contenido.outputs.PUBLICAR_FACEBOOK }}" "${{ steps.facebook.outcome }}" "${{ steps.facebook.outputs.ESTADO }}" "${{ steps.facebook.outputs.REMOTE_ID }}"
+          registrar "$C" "$STORY" instagram story "${{ steps.contenido.outputs.PUBLICAR_STORY_INSTAGRAM }}" "${{ steps.story_instagram.outcome }}" "${{ steps.story_instagram.outputs.ESTADO }}" "${{ steps.story_instagram.outputs.REMOTE_ID }}"
+          registrar "$C" "$STORY" facebook story "${{ steps.contenido.outputs.PUBLICAR_STORY_FACEBOOK }}" "${{ steps.story_facebook.outcome }}" "${{ steps.story_facebook.outputs.ESTADO }}" "${{ steps.story_facebook.outputs.REMOTE_ID }}"
+          registrar "$C" "$FEED" tiktok feed "${{ steps.contenido.outputs.PUBLICAR_TIKTOK }}" "${{ steps.tiktok.outcome }}" "${{ steps.tiktok.outputs.ESTADO }}" "${{ steps.tiktok.outputs.REMOTE_ID }}"
+          registrar "$RC" "$REEL" instagram reel "${{ steps.contenido.outputs.PUBLICAR_REEL_INSTAGRAM }}" "${{ steps.reel_instagram.outcome }}" "${{ steps.reel_instagram.outputs.ESTADO }}" "${{ steps.reel_instagram.outputs.REMOTE_ID }}"
+          registrar "$RC" "$REEL" facebook reel "${{ steps.contenido.outputs.PUBLICAR_REEL_FACEBOOK }}" "${{ steps.reel_facebook.outcome }}" "${{ steps.reel_facebook.outputs.ESTADO }}" "${{ steps.reel_facebook.outputs.REMOTE_ID }}"
+          registrar "$RC" "$REEL" tiktok reel "${{ steps.contenido.outputs.PUBLICAR_REEL_TIKTOK }}" "${{ steps.reel_tiktok.outcome }}" "${{ steps.reel_tiktok.outputs.ESTADO }}" "${{ steps.reel_tiktok.outputs.REMOTE_ID }}"
           git config user.name "Las 3 Yemas Bot"
           git config user.email "bot@las3yemas.cl"
           [ -f publicidad/registro-publicaciones.jsonl ] || exit 0

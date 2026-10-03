@@ -3,6 +3,7 @@ import datetime as dt
 import hashlib
 import json
 import os
+import struct
 import subprocess
 import sys
 import tempfile
@@ -10,10 +11,12 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import conciliar  # noqa: E402
 import seleccionar as sel  # noqa: E402
 
 RAIZ = sel.RAIZ
 LUNES = dt.date(2026, 10, 5)
+CAMP = "las3yemas_20261003"
 LEYENDA_ANTERIOR = (
     "🥚 Las 3 Yemas 💗 Huevos frescos y contenido útil para ti. 🚚 Repartimos en Viña del Mar, "
     "Valparaíso, Quilpué, Belloto y Villa Alemana. #Las3Yemas #HuevosFrescos"
@@ -32,6 +35,14 @@ class Base(unittest.TestCase):
     def elegir(self, fecha, **kw):
         return sel.elegir(fecha, self.config, ruta_registro=self.registro, **kw)
 
+    def registrar(self, campana, asset, canal, formato, estado, rid="", fecha=LUNES):
+        return sel.registrar(campana, asset, canal, formato, fecha, estado, rid, ruta=self.registro)
+
+    def aprobar_todo(self):
+        self.config["canales_story"] = ["instagram", "facebook"]
+        self.config["reels"]["activos"] = True
+        self.config["reels"]["aprobados"] = ["L3Y-REEL-01", "L3Y-REEL-02", "L3Y-REEL-03"]
+
 
 class Paquete(Base):
     def test_validador_del_paquete(self):
@@ -45,12 +56,38 @@ class Paquete(Base):
         tipos = {}
         for a in manifest["assets"]:
             ruta = RAIZ / sel.ruta_asset(self.config, a)
-            self.assertTrue(ruta.is_file(), ruta)
             self.assertEqual(hashlib.sha256(ruta.read_bytes()).hexdigest(), a["sha256"])
             self.assertNotIn("\n", a["caption"])
             self.assertNotRegex(a["caption"].lower(), r"\$|gratis|descuento|oferta|stock")
             tipos[a["type"]] = tipos.get(a["type"], 0) + 1
         self.assertEqual(tipos, {"feed": 7, "story": 7, "reel_cover": 3, "commercial_extra": 2})
+
+    def test_jpg_para_meta_y_tiktok(self):
+        c = sel.carpeta_campana(self.config)
+        for carpeta, n, alto in (("07_TikTok_JPG", 9, 1350), ("09_Stories_JPG", 7, 1920), ("10_Portadas_JPG", 3, 1920)):
+            jpgs = sorted((c / carpeta).glob("*.jpg"))
+            self.assertEqual(len(jpgs), n, carpeta)
+            for j in jpgs:
+                datos = j.read_bytes()
+                self.assertEqual(datos[:3], b"\xff\xd8\xff")
+                self.assertLess(len(datos), 8_000_000)  # límite Instagram
+                self.assertIn(struct.pack(">HH", alto, 1080), datos[:2000])  # SOF: alto, ancho
+
+    def test_reels_cumplen_especificacion(self):
+        reels = sel.cargar_reels(self.config)
+        self.assertEqual(len(reels["assets"]), 3)
+        for r in reels["assets"]:
+            datos = (RAIZ / r["file"]).read_bytes()
+            self.assertEqual(hashlib.sha256(datos).hexdigest(), r["sha256"])
+            self.assertEqual(datos[4:8], b"ftyp")
+            self.assertLess(datos.find(b"moov"), datos.find(b"mdat"))  # moov al inicio
+            self.assertNotIn(b"elst", datos[:datos.find(b"mdat")])    # sin edit lists
+            self.assertIn(b"avc1", datos)
+            self.assertIn(b"mp4a", datos)
+            self.assertLess(len(datos), 100_000_000)
+            self.assertTrue((RAIZ / r["cover_jpg"]).is_file())
+            self.assertGreaterEqual(r["duration_seconds"], 3)
+            self.assertLessEqual(r["duration_seconds"], 90)  # límite Reels de Facebook
 
     def test_nombres_historicos_intactos(self):
         for d in range(1, 8):
@@ -58,152 +95,152 @@ class Paquete(Base):
 
 
 class Seleccion(Base):
+    def test_estado_actual_sin_formatos_nuevos(self):
+        # Hasta la aprobación: solo Feed + foto TikTok, sin Stories ni Reels.
+        for i in range(7):
+            d = self.elegir(LUNES + dt.timedelta(days=i))
+            self.assertEqual(d["MODO"], "campana")
+            self.assertEqual((d["PUBLICAR_STORY_INSTAGRAM"], d["PUBLICAR_STORY_FACEBOOK"]), ("false", "false"))
+            self.assertEqual(d["REEL_ID"], "")
+            self.assertNotIn("|story", d["PENDIENTES"])
+            self.assertNotIn("|reel", d["PENDIENTES"])
+
     def test_siete_dias_feed_y_story_mismo_dia(self):
-        self.config["canales_story"] = ["instagram", "facebook"]
+        self.aprobar_todo()
         manifest = {a["id"]: a for a in sel.cargar_manifest(self.config)["assets"]}
-        vistos = set()
         for i in range(7):
             f = LUNES + dt.timedelta(days=i)
-            d = self.elegir(f, forzar_activa=True)
-            feed = manifest[d["ASSET_ID"]]
-            self.assertEqual(d["MODO"], "campana")
-            self.assertEqual(feed["type"], "feed")
-            self.assertEqual(feed["day"], f.isoweekday())
-            self.assertEqual(Path(d["IMAGEN"]).name[:2], Path(d["STORY"]).name[:2])
-            self.assertIn("/02_Stories/", d["STORY"])
-            self.assertEqual(d["CAPTION"], feed["caption"])
-            self.assertEqual(manifest[d["STORY_ID"]]["type"], "story")
+            d = self.elegir(f)
+            self.assertEqual(manifest[d["ASSET_ID"]]["day"], f.isoweekday())
             self.assertEqual(manifest[d["STORY_ID"]]["day"], f.isoweekday())
+            self.assertEqual(manifest[d["STORY_ID"]]["type"], "story")
+            self.assertEqual(Path(d["STORY"]).stem, Path(manifest[d["STORY_ID"]]["file"]).stem)
+            self.assertTrue(d["STORY"].endswith(".jpg"))
+            self.assertEqual(Path(d["TIKTOK_IMAGEN"]).stem, Path(d["IMAGEN"]).stem)
             self.assertEqual((d["PUBLICAR_STORY_INSTAGRAM"], d["PUBLICAR_STORY_FACEBOOK"]), ("true", "true"))
-            jpg = RAIZ / d["TIKTOK_IMAGEN"]
-            self.assertTrue(jpg.is_file())
-            self.assertEqual(jpg.stem, Path(d["IMAGEN"]).stem)
-            self.assertEqual(jpg.read_bytes()[:3], b"\xff\xd8\xff")
-            vistos.add(d["ASSET_ID"])
-        self.assertEqual(len(vistos), 7)
 
-    def test_portadas_y_extras_no_entran_al_calendario(self):
+    def test_reels_solo_en_su_fecha_y_con_aprobacion(self):
+        self.config["reels"]["activos"] = True
+        self.config["reels"]["aprobados"] = ["L3Y-REEL-02"]
+        dias = {}
         for i in range(7):
-            d = self.elegir(LUNES + dt.timedelta(days=i), forzar_activa=True)
-            self.assertNotIn("03_Portadas_Reels", d["IMAGEN"] + d["STORY"])
+            f = LUNES + dt.timedelta(days=i)
+            dias[f.isoformat()] = self.elegir(f)["REEL_ID"]
+        self.assertEqual(dias["2026-10-08"], "L3Y-REEL-02")
+        self.assertEqual(dias["2026-10-06"], "")  # programado pero no aprobado
+        self.assertEqual(sum(1 for v in dias.values() if v), 1)
+
+    def test_reel_lleva_su_portada(self):
+        self.aprobar_todo()
+        esperado = {"2026-10-06": ("L3Y-REEL-01", "01_sonido"), "2026-10-08": ("L3Y-REEL-02", "02_el_desayuno"),
+                    "2026-10-10": ("L3Y-REEL-03", "03_mision")}
+        for fecha, (reel, nombre) in esperado.items():
+            d = self.elegir(dt.date.fromisoformat(fecha))
+            self.assertEqual(d["REEL_ID"], reel)
+            self.assertIn(nombre, d["REEL_VIDEO"])
+            self.assertTrue(d["REEL_VIDEO"].endswith(".mp4"))
+            self.assertIn(nombre, d["REEL_PORTADA"])
+            self.assertTrue(d["REEL_PORTADA"].endswith(".jpg"))
+            self.assertEqual(sum(d[f"PUBLICAR_REEL_{c}"] == "true" for c in ("INSTAGRAM", "FACEBOOK", "TIKTOK")), 3)
+
+    def test_reels_desactivados_no_salen_aunque_esten_aprobados(self):
+        self.config["reels"]["aprobados"] = ["L3Y-REEL-01"]
+        self.assertEqual(self.elegir(dt.date(2026, 10, 6))["REEL_ID"], "")
+
+    def test_portadas_y_extras_no_entran_al_feed(self):
+        self.aprobar_todo()
+        for i in range(7):
+            d = self.elegir(LUNES + dt.timedelta(days=i))
+            self.assertNotIn("Portadas", d["IMAGEN"] + d["STORY"])
             self.assertNotIn("04_Extras", d["IMAGEN"])
 
     def test_sustitucion_explicita_con_extra(self):
         self.config["sustituciones"] = {"2026-10-07": "L3Y-20261003-18"}
-        d = self.elegir(dt.date(2026, 10, 7), forzar_activa=True)
-        self.assertEqual(d["ASSET_ID"], "L3Y-20261003-18")
+        self.assertEqual(self.elegir(dt.date(2026, 10, 7))["ASSET_ID"], "L3Y-20261003-18")
         self.config["sustituciones"] = {"2026-10-07": "L3Y-20261003-15"}
         with self.assertRaises(ValueError):
-            self.elegir(dt.date(2026, 10, 7), forzar_activa=True)
+            self.elegir(dt.date(2026, 10, 7))
 
-    def test_inactiva_repite_rotacion_anterior(self):
-        self.config["activa"] = False
-        for i in range(7):
-            f = LUNES + dt.timedelta(days=i)
+    def test_regreso_al_contenido_habitual(self):
+        for f in (dt.date(2026, 10, 4), dt.date(2026, 10, 12), dt.date(2026, 10, 18)):
             d = self.elegir(f)
             self.assertEqual(d["MODO"], "historico")
             self.assertEqual(d["IMAGEN"], f"publicidad/{f.isoweekday():02d}_semana.png")
             self.assertEqual(d["CAPTION"], LEYENDA_ANTERIOR)
-            self.assertEqual((d["PUBLICAR_INSTAGRAM"], d["PUBLICAR_FACEBOOK"]), ("true", "true"))
-            # Sin campaña: sin Stories y TikTok con la imagen del servidor.
-            self.assertEqual((d["PUBLICAR_STORY_INSTAGRAM"], d["PUBLICAR_STORY_FACEBOOK"]), ("false", "false"))
-            self.assertEqual((d["PUBLICAR_TIKTOK"], d["TIKTOK_IMAGEN"]), ("true", ""))
+            self.assertEqual(d["TIKTOK_IMAGEN"], "")
+            self.assertEqual(d["PUBLICAR_STORY_INSTAGRAM"], "false")
+        self.config["activa"] = False
+        self.assertEqual(self.elegir(LUNES)["MODO"], "historico")
 
-    def test_fuera_de_rango_vuelve_a_historico(self):
-        self.config["activa"] = True
-        self.assertEqual(self.elegir(dt.date(2026, 10, 4))["MODO"], "historico")
-        self.assertEqual(self.elegir(dt.date(2026, 10, 12))["MODO"], "historico")
-        self.assertEqual(self.elegir(dt.date(2026, 10, 11))["MODO"], "campana")
-
-    def test_hora_del_cron_en_santiago(self):
-        # 13:00 UTC (cron actual) cae el mismo día local con y sin horario de verano.
+    def test_limites_del_dia_local(self):
         for f in (dt.date(2026, 10, 5), dt.date(2026, 10, 11), dt.date(2027, 4, 5), dt.date(2027, 6, 7)):
             ahora = dt.datetime(f.year, f.month, f.day, 13, tzinfo=dt.timezone.utc)
             self.assertEqual(sel.fecha_local(ahora), f)
-        # Un disparo manual de noche usa el día de Chile, no el de UTC.
-        noche = dt.datetime(2026, 10, 6, 1, 30, tzinfo=dt.timezone.utc)
-        self.assertEqual(sel.fecha_local(noche), dt.date(2026, 10, 5))
+        # 23:59 de Chile del domingo 11 = 02:59 UTC del lunes 12: sigue siendo el 11.
+        self.assertEqual(sel.fecha_local(dt.datetime(2026, 10, 12, 2, 59, tzinfo=dt.timezone.utc)),
+                         dt.date(2026, 10, 11))
+        self.assertEqual(sel.fecha_local(dt.datetime(2026, 10, 12, 3, 0, tzinfo=dt.timezone.utc)),
+                         dt.date(2026, 10, 12))
+        # El ejecutor atrasado (como el 3-oct, 18:18 UTC) sigue en el mismo día local.
+        self.assertEqual(sel.fecha_local(dt.datetime(2026, 10, 3, 18, 18, tzinfo=dt.timezone.utc)),
+                         dt.date(2026, 10, 3))
 
 
 class Registro(Base):
-    def registrar(self, canal, estado, rid=""):
-        return sel.registrar("las3yemas_20261003", "L3Y-20261003-01", canal, LUNES, estado, rid,
-                             ruta=self.registro)
-
     def test_estados_que_bloquean(self):
         for estado, esperado in (("en_curso", "false"), ("publicado", "false"),
-                                 ("desconocido", "false"), ("fallido", "true")):
+                                 ("desconocido", "false"), ("fallido", "true"), ("preparado", "true")):
             self.registro.unlink(missing_ok=True)
-            self.registrar("instagram", estado, "123" if estado == "publicado" else "")
-            d = self.elegir(LUNES, forzar_activa=True)
+            self.registrar(CAMP, "L3Y-20261003-01", "instagram", "feed", estado,
+                           "123" if estado == "publicado" else "")
+            d = self.elegir(LUNES)
             self.assertEqual(d["PUBLICAR_INSTAGRAM"], esperado, estado)
             self.assertEqual(d["PUBLICAR_FACEBOOK"], "true")
 
-    def test_story_y_tiktok_tienen_su_propia_clave(self):
-        self.config["canales_story"] = ["instagram", "facebook"]
-        sel.registrar("las3yemas_20261003", "L3Y-20261003-08", "instagram_story", LUNES, "publicado", "9",
-                      ruta=self.registro)
-        self.registrar("tiktok", "desconocido")
-        d = self.elegir(LUNES, forzar_activa=True)
-        self.assertEqual(d["PUBLICAR_STORY_INSTAGRAM"], "false")
-        self.assertEqual(d["PUBLICAR_STORY_FACEBOOK"], "true")
-        self.assertEqual(d["PUBLICAR_TIKTOK"], "false")
-        self.assertEqual(d["PUBLICAR_INSTAGRAM"], "true")
-
     def test_publicado_exige_id_remoto(self):
         with self.assertRaises(ValueError):
-            self.registrar("instagram", "publicado")
+            self.registrar(CAMP, "L3Y-20261003-01", "instagram", "feed", "publicado")
 
-    def test_clave_por_canal_y_fecha(self):
-        self.registrar("instagram", "publicado", "123")
-        martes = self.elegir(LUNES + dt.timedelta(days=1), forzar_activa=True)
-        self.assertEqual(martes["PUBLICAR_INSTAGRAM"], "true")
+    def test_formato_en_la_clave(self):
+        self.aprobar_todo()
+        self.registrar(CAMP, "L3Y-20261003-08", "instagram", "story", "publicado", "9")
+        d = self.elegir(LUNES)
+        self.assertEqual(d["PUBLICAR_STORY_INSTAGRAM"], "false")
+        self.assertEqual(d["PUBLICAR_INSTAGRAM"], "true")
+        self.assertEqual(d["PUBLICAR_STORY_FACEBOOK"], "true")
 
+    def test_filas_antiguas_sin_formato(self):
+        self.aprobar_todo()
+        with open(self.registro, "w", encoding="utf-8") as f:
+            for canal, asset in (("instagram_story", "L3Y-20261003-08"), ("tiktok", "L3Y-20261003-01")):
+                f.write(json.dumps({"clave": f"{CAMP}|{asset}|{canal}|2026-10-05", "campana": CAMP,
+                                    "asset_id": asset, "canal": canal, "fecha_local": "2026-10-05",
+                                    "estado": "desconocido"}) + "\n")
+        d = self.elegir(LUNES)
+        self.assertEqual(d["PUBLICAR_STORY_INSTAGRAM"], "false")
+        self.assertEqual(d["PUBLICAR_TIKTOK"], "false")
 
-class Reels(Base):
-    def setUp(self):
-        super().setUp()
-        self.video = RAIZ / "publicidad/_prueba_reel.mp4"
-
-    def tearDown(self):
-        self.video.unlink(missing_ok=True)
-        super().tearDown()
-
-    def test_sin_video_aprobado_no_hay_reel(self):
-        for asset in ("L3Y-20261003-15", "L3Y-20261003-16", "L3Y-20261003-17"):
-            with self.assertRaises(ValueError):
-                sel.preparar_reel(asset, LUNES, self.config, self.registro)
-        self.video.write_bytes(b"\x00\x00\x00\x18ftypmp42")
-        self.config["portadas_reels"]["L3Y-20261003-15"].update(video="publicidad/_prueba_reel.mp4")
-        with self.assertRaises(ValueError):  # falta aprobado=true
-            sel.preparar_reel("L3Y-20261003-15", LUNES, self.config, self.registro)
-
-    def test_portada_con_video_aprobado(self):
-        self.video.write_bytes(b"\x00\x00\x00\x18ftypmp42")
-        self.config["portadas_reels"]["L3Y-20261003-16"].update(video="publicidad/_prueba_reel.mp4", aprobado=True)
-        d = sel.preparar_reel("L3Y-20261003-16", LUNES, self.config, self.registro)
-        self.assertEqual(d["VIDEO"], "publicidad/_prueba_reel.mp4")
-        self.assertIn("03_Portadas_Reels/02_el_desayuno", d["PORTADA"])
-        self.assertEqual(d["PUBLICAR_REEL"], "true")
-        sel.registrar("las3yemas_20261003", "L3Y-20261003-16", "instagram_reel", LUNES, "en_curso",
-                      ruta=self.registro)
-        d = sel.preparar_reel("L3Y-20261003-16", LUNES, self.config, self.registro)
-        self.assertEqual(d["PUBLICAR_REEL"], "false")
-
-    def test_solo_portadas(self):
-        self.video.write_bytes(b"x")
-        self.config["portadas_reels"]["L3Y-20261003-01"] = {"video": "publicidad/_prueba_reel.mp4", "aprobado": True}
-        with self.assertRaises(ValueError):
-            sel.preparar_reel("L3Y-20261003-01", LUNES, self.config, self.registro)
+    def test_dias_habituales_tambien_evitan_duplicados(self):
+        # Caso real del 3-oct: ejecución manual y luego la programada atrasada.
+        sabado = dt.date(2026, 10, 3)
+        primera = self.elegir(sabado)
+        self.assertEqual(primera["PUBLICAR_INSTAGRAM"], "true")
+        for item in primera["PENDIENTES"].split():
+            campana, asset, canal, formato = item.split("|")
+            self.registrar(campana, asset, canal, formato, "publicado", "id", fecha=sabado)
+        segunda = self.elegir(sabado)
+        self.assertEqual((segunda["PUBLICAR_INSTAGRAM"], segunda["PUBLICAR_FACEBOOK"], segunda["PUBLICAR_TIKTOK"]),
+                         ("false", "false", "false"))
+        self.assertEqual(segunda["PENDIENTES"], "")
 
 
 class FlujoCLI(Base):
-    """Simula dos ejecuciones del workflow el mismo día, sin llamadas de red."""
+    """Dos ejecuciones del workflow el mismo día, por la línea de comandos."""
 
     def correr(self, *args, salida=None):
         cfg = Path(self.tmp.name) / "config.json"
-        datos = dict(self.config, activa=True)
-        cfg.write_text(json.dumps(datos), encoding="utf-8")
+        self.aprobar_todo()
+        cfg.write_text(json.dumps(self.config), encoding="utf-8")
         env = dict(os.environ, PUBLICIDAD_CONFIG=str(cfg), PUBLICIDAD_REGISTRO=str(self.registro),
                    PYTHONIOENCODING="utf-8")
         if salida:
@@ -213,50 +250,105 @@ class FlujoCLI(Base):
         self.assertEqual(r.returncode, 0, r.stderr)
         return r.stdout
 
-    def salida(self, nombre):
-        ruta = Path(self.tmp.name) / nombre
-        ruta.write_text("", encoding="utf-8")
-        return ruta
+    def elegir_cli(self, fecha, nombre):
+        out = Path(self.tmp.name) / nombre
+        out.write_text("", encoding="utf-8")
+        self.correr("elegir", "--fecha", fecha, "--github-output", salida=out)
+        return dict(l.split("=", 1) for l in out.read_text(encoding="utf-8").splitlines())
 
-    def test_segunda_ejecucion_del_dia_no_publica(self):
-        out1 = self.salida("out1")
-        self.correr("elegir", "--fecha", "2026-10-05", "--github-output", salida=out1)
-        o1 = dict(l.split("=", 1) for l in out1.read_text(encoding="utf-8").splitlines())
-        self.assertEqual((o1["PUBLICAR_INSTAGRAM"], o1["PUBLICAR_FACEBOOK"]), ("true", "true"))
-        for canal in ("instagram", "facebook"):
-            self.correr("registrar", "--canal", canal, "--estado", "en_curso",
-                        "--asset", o1["ASSET_ID"], "--fecha", o1["FECHA_LOCAL"])
-        self.correr("registrar", "--canal", "instagram", "--estado", "publicado", "--remote-id", "1789",
-                    "--asset", o1["ASSET_ID"], "--fecha", o1["FECHA_LOCAL"])
-        self.correr("registrar", "--canal", "facebook", "--estado", "desconocido",
-                    "--asset", o1["ASSET_ID"], "--fecha", o1["FECHA_LOCAL"])
+    def test_segunda_ejecucion_no_repite_nada(self):
+        o1 = self.elegir_cli("2026-10-06", "o1")  # martes: Feed + Story + Reel 01
+        self.assertEqual(len(o1["PENDIENTES"].split()), 8)
+        self.correr("iniciar", "--fecha", "2026-10-06", "--pendientes", o1["PENDIENTES"])
+        o2 = self.elegir_cli("2026-10-06", "o2")
+        self.assertEqual(o2["PENDIENTES"], "")
+        self.assertTrue(all(o2[k] == "false" for k in o2 if k.startswith("PUBLICAR_")))
 
-        out2 = self.salida("out2")
-        self.correr("elegir", "--fecha", "2026-10-05", "--github-output", salida=out2)
-        o2 = dict(l.split("=", 1) for l in out2.read_text(encoding="utf-8").splitlines())
-        self.assertEqual((o2["PUBLICAR_INSTAGRAM"], o2["PUBLICAR_FACEBOOK"]), ("false", "false"))
+    def test_recuperar_desconocido(self):
+        o1 = self.elegir_cli("2026-10-06", "o1")
+        self.correr("registrar", "--campana", CAMP, "--asset", o1["ASSET_ID"], "--canal", "instagram",
+                    "--formato", "feed", "--fecha", "2026-10-06", "--estado", "desconocido")
+        pend = self.correr("pendientes")
+        self.assertIn('"estado": "desconocido"', pend)
+        self.assertEqual(self.elegir_cli("2026-10-06", "o2")["PUBLICAR_INSTAGRAM"], "false")
+        # La conciliación lo encontró como fallido -> se libera para reintentar.
+        self.correr("registrar", "--campana", CAMP, "--asset", o1["ASSET_ID"], "--canal", "instagram",
+                    "--formato", "feed", "--fecha", "2026-10-06", "--estado", "fallido")
+        self.assertEqual(self.elegir_cli("2026-10-06", "o3")["PUBLICAR_INSTAGRAM"], "true")
 
-        filas = [json.loads(l) for l in self.registro.read_text(encoding="utf-8").splitlines()]
-        self.assertEqual(filas[2]["clave"], "las3yemas_20261003|L3Y-20261003-01|instagram|2026-10-05")
-        self.assertEqual(filas[2]["remote_id"], "1789")
+
+class Conciliacion(Base):
+    def setUp(self):
+        super().setUp()
+        self.aprobar_todo()
+        self.lineas = []
+
+    def pendientes(self, *filas):
+        for f in filas:
+            self.registrar(*f, "desconocido", fecha=dt.date(2026, 10, 6))
+        return sel.pendientes_de_revision(self.registro)
+
+    def test_encuentra_feed_y_reel_por_leyenda_y_fecha(self):
+        pend = self.pendientes((CAMP, "L3Y-20261003-02", "instagram", "feed"),
+                               ("L3Y-20261003-REELS", "L3Y-REEL-01", "instagram", "reel"),
+                               (CAMP, "L3Y-20261003-09", "instagram", "story"))
+        feed_cap = sel.cargar_manifest(self.config)["assets"][1]["caption"]
+        ig = [
+            {"id": "A", "texto": feed_cap, "fecha": "2026-10-05", "tipo": "FEED"},   # otro día
+            {"id": "B", "texto": feed_cap, "fecha": "2026-10-06", "tipo": "FEED"},
+            {"id": "C", "texto": "El sonido de la frescura. Haz tu pedido en www.las3yemas.cl.",
+             "fecha": "2026-10-06", "tipo": "REELS"},
+        ]
+        conciliar.conciliar(pend, self.config, {"instagram": ig}, ruta=self.registro, salida=self.lineas.append)
+        estados = sel.leer_registro(self.registro)
+        ids = {k.split("|")[1] + "|" + k.split("|")[3]: v["remote_id"] for k, v in estados.items()
+               if v["estado"] == "publicado"}
+        self.assertEqual(ids, {"L3Y-20261003-02|feed": "B", "L3Y-REEL-01|reel": "C"})
+        self.assertTrue(any("NO ESTÁ" in l and "story" in l for l in self.lineas))
+        self.assertEqual(len(sel.pendientes_de_revision(self.registro)), 1)
+
+    def test_no_encontrado_solo_se_libera_si_se_pide(self):
+        pend = self.pendientes((CAMP, "L3Y-20261003-02", "facebook", "feed"),
+                               (CAMP, "L3Y-20261003-02", "tiktok", "feed"))
+        conciliar.conciliar(pend, self.config, {"facebook": []}, ruta=self.registro, salida=self.lineas.append)
+        self.assertEqual(len(sel.pendientes_de_revision(self.registro)), 2)
+        self.assertTrue(any(l.startswith("MANUAL") and "tiktok" in l for l in self.lineas))
+        conciliar.conciliar(pend, self.config, {"facebook": []}, marcar_no_encontrados=True,
+                            ruta=self.registro, salida=self.lineas.append)
+        restantes = sel.pendientes_de_revision(self.registro)
+        self.assertEqual([f["canal"] for f in restantes], ["tiktok"])
+
+    def test_fecha_remota_en_hora_de_chile(self):
+        self.assertEqual(conciliar.fecha_de("2026-10-07T02:30:00+0000"), "2026-10-06")
 
 
 class Workflows(unittest.TestCase):
-    def test_solo_publicidad_diaria_publica(self):
-        wf = RAIZ / ".github/workflows"
-        marketing = (wf / "marketing.yml").read_text(encoding="utf-8")
-        self.assertNotIn("curl", marketing)
-        self.assertNotIn("schedule", marketing)
-        diaria = (wf / "publicidad-diaria.yml").read_text(encoding="utf-8")
-        self.assertIn('cron: "0 13 * * *"', diaria)
-        self.assertNotIn("media_type=REELS", diaria)
-        reels = (wf / "reels.yml").read_text(encoding="utf-8")
-        self.assertNotIn("schedule", reels)  # Reels solo a mano
+    def leer(self, nombre):
+        return (RAIZ / ".github/workflows" / nombre).read_text(encoding="utf-8")
+
+    def test_disparadores_intactos(self):
+        self.assertNotIn("curl", self.leer("marketing.yml"))
+        self.assertNotIn("schedule", self.leer("marketing.yml"))
+        self.assertIn('cron: "0 13 * * *"', self.leer("publicidad-diaria.yml"))
+        self.assertNotIn("schedule", self.leer("conciliar.yml"))
+        self.assertFalse((RAIZ / ".github/workflows/reels.yml").exists())
+
+    def test_conciliar_no_publica(self):
+        fuente = (RAIZ / "publicidad/conciliar.py").read_text(encoding="utf-8")
+        self.assertNotIn("POST", fuente)
+        self.assertNotIn("media_publish", fuente)
+        self.assertNotIn("print(token", fuente)
 
     def test_selector_sin_red(self):
         fuente = (RAIZ / "publicidad/seleccionar.py").read_text(encoding="utf-8")
         for modulo in ("urllib", "requests", "socket", "http.client", "subprocess"):
             self.assertNotIn(f"import {modulo}", fuente)
+
+    def test_ningun_secreto_en_texto(self):
+        diaria = self.leer("publicidad-diaria.yml")
+        for linea in diaria.splitlines():
+            if "secrets." in linea:
+                self.assertRegex(linea.strip(), r"^[A-Z_]+: \$\{\{ secrets\.[A-Z_]+ \}\}$")
 
 
 if __name__ == "__main__":

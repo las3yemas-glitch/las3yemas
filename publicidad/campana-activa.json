@@ -8,14 +8,20 @@
   "canales_feed": ["instagram", "facebook"],
   "canales_story": [],
   "sustituciones": {},
-  "notas": {
-    "story": "Stories IG (media_type=STORIES) y Facebook (photo_stories) en pasos aparte con continue-on-error: si falta permiso, el Feed no se ve afectado y queda 'fallido' en el registro.",
-    "reel_cover": "Portadas PNG. Se publican solo como portada de un Reel real con .github/workflows/reels.yml (manual) cuando 'video' apunte a un MP4 del repo y 'aprobado' sea true.",
-    "tiktok": "El workflow envía a Render el JPG de 07_TikTok_JPG; si el servidor aún no tiene esa versión, usa su imagen 0N_semana.jpg de siempre."
+  "reels": {
+    "manifest": "assets/campaigns/las3yemas_20261003/08_Reels/manifest_reels.json",
+    "activos": false,
+    "canales": ["instagram", "facebook", "tiktok"],
+    "programacion": {
+      "2026-10-06": "L3Y-REEL-01",
+      "2026-10-08": "L3Y-REEL-02",
+      "2026-10-10": "L3Y-REEL-03"
+    },
+    "aprobados": []
   },
-  "portadas_reels": {
-    "L3Y-20261003-15": {"estado": "pendiente_video", "video": null, "aprobado": false},
-    "L3Y-20261003-16": {"estado": "pendiente_video", "video": null, "aprobado": false},
-    "L3Y-20261003-17": {"estado": "pendiente_video", "video": null, "aprobado": false}
+  "notas": {
+    "story": "Stories en JPG (09_Stories_JPG). Para activarlas: canales_story = [\"instagram\", \"facebook\"]. Pasos con continue-on-error: si falta permiso, el Feed no se ve afectado.",
+    "reels": "La programación es una propuesta. Solo se publica con activos=true y el ID en aprobados. Vídeo MP4 de 08_Reels con portada JPG de 10_Portadas_JPG.",
+    "tiktok": "Siempre borrador (MEDIA_UPLOAD). Foto: JPG de 07_TikTok_JPG. Reel: MP4 de 08_Reels a la bandeja de TikTok."
   }
 }

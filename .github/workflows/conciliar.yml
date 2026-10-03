@@ -1,0 +1,42 @@
+name: Revisar resultados desconocidos
+
+# Solo manual y solo lectura en Instagram/Facebook: no publica nada.
+on:
+  workflow_dispatch:
+    inputs:
+      marcar_no_encontrados:
+        description: "Marcar como fallido lo que no aparezca en la cuenta (permite reintentar)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  conciliar:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Buscar publicaciones pendientes
+        env:
+          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          FACEBOOK_PAGE_ACCESS_TOKEN: ${{ secrets.FACEBOOK_PAGE_ACCESS_TOKEN }}
+        run: |
+          if [ "${{ inputs.marcar_no_encontrados }}" = "true" ]; then
+            python3 publicidad/conciliar.py --marcar-no-encontrados
+          else
+            python3 publicidad/conciliar.py
+          fi
+
+      - name: Guardar registro
+        run: |
+          git config user.name "Las 3 Yemas Bot"
+          git config user.email "bot@las3yemas.cl"
+          [ -f publicidad/registro-publicaciones.jsonl ] || exit 0
+          git add publicidad/registro-publicaciones.jsonl
+          git commit -m "Conciliación de publicaciones" || exit 0
+          git pull --rebase -q || true
+          git push

@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "campaign_id": "L3Y-20261003-REELS",
+  "timezone": "America/Santiago",
+  "derivation": "Vídeo H.264 copiado sin recodificar (md5 de vídeo idéntico al original); audio AAC 128 kbps 48 kHz; sin edit lists; moov al inicio (especificación Instagram Reels).",
+  "assets": [
+    {
+      "id": "L3Y-REEL-01",
+      "title": "El sonido de la frescura",
+      "file": "assets/campaigns/las3yemas_20261003/08_Reels/01_sonido_de_la_frescura_1080x1920.mp4",
+      "sha256": "29a8fe62d67920808863a651e992a61220539c9543c498a8276dab52361931d9",
+      "source_sha256": "0d93098892334f0143abe292f0dd432c6d2e10b387b4870b6a55a11d38b64500",
+      "cover_id": "L3Y-20261003-15",
+      "cover_jpg": "assets/campaigns/las3yemas_20261003/10_Portadas_JPG/01_sonido_de_la_frescura_1080x1920.jpg",
+      "cover_jpg_sha256": "381f60350173766da34f8b3e77ebf539ec370d554a74c4e3d1ac952aac751b74",
+      "duration_seconds": 12.0,
+      "width": 1080,
+      "height": 1920,
+      "fps": 30,
+      "video_codec": "h264",
+      "audio_codec": "aac",
+      "caption": "El sonido de la frescura. Haz tu pedido en www.las3yemas.cl."
+    },
+    {
+      "id": "L3Y-REEL-02",
+      "title": "El desayuno",
+      "file": "assets/campaigns/las3yemas_20261003/08_Reels/02_el_desayuno_1080x1920.mp4",
+      "sha256": "cc4691346b370e546f3be8c0d73560fac3a167d59f999b8d938898bacd2cdcf3",
+      "source_sha256": "712fe7627df9317872207d0fcb41b06ca1c25863dbfda05f61cc6ab65a22c70d",
+      "cover_id": "L3Y-20261003-16",
+      "cover_jpg": "assets/campaigns/las3yemas_20261003/10_Portadas_JPG/02_el_desayuno_1080x1920.jpg",
+      "cover_jpg_sha256": "eb1acc831b869c1ab96a356e9575d957dd10a493b7f559093f3e430fa3ce4281",
+      "duration_seconds": 15.0,
+      "width": 1080,
+      "height": 1920,
+      "fps": 30,
+      "video_codec": "h264",
+      "audio_codec": "aac",
+      "caption": "El desayuno. Haz tu pedido en www.las3yemas.cl."
+    },
+    {
+      "id": "L3Y-REEL-03",
+      "title": "Misión: no quedarse sin huevos",
+      "file": "assets/campaigns/las3yemas_20261003/08_Reels/03_mision_huevos_1080x1920.mp4",
+      "sha256": "c6091cf87ac324499677b91cc9d83495a05438b25eba1c6b69161d5ab9bcdcd6",
+      "source_sha256": "815516f7825f59ca0f9c0b1a4c05c90a11b3bcf85be3d5e40c3e4b91d7131cee",
+      "cover_id": "L3Y-20261003-17",
+      "cover_jpg": "assets/campaigns/las3yemas_20261003/10_Portadas_JPG/03_mision_huevos_1080x1920.jpg",
+      "cover_jpg_sha256": "9cafa3d9d35550eff2afe8ba9e844f5cd1ba98a184072e664d6cb2120d8b5c3d",
+      "duration_seconds": 14.0,
+      "width": 1080,
+      "height": 1920,
+      "fps": 30,
+      "video_codec": "h264",
+      "audio_codec": "aac",
+      "caption": "Misión: no quedarse sin huevos. Haz tu pedido en www.las3yemas.cl."
+    }
+  ]
+}
