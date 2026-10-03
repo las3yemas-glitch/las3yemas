@@ -6,7 +6,7 @@
   "fecha_inicio": "2026-10-05",
   "fecha_fin": "2026-10-11",
   "canales_feed": ["instagram", "facebook"],
-  "canales_story": ["instagram", "facebook"],
+  "canales_story": [],
   "sustituciones": {},
   "notas": {
     "story": "Stories IG (media_type=STORIES) y Facebook (photo_stories) en pasos aparte con continue-on-error: si falta permiso, el Feed no se ve afectado y queda 'fallido' en el registro.",

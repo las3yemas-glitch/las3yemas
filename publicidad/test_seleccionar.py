@@ -59,6 +59,7 @@ class Paquete(Base):
 
 class Seleccion(Base):
     def test_siete_dias_feed_y_story_mismo_dia(self):
+        self.config["canales_story"] = ["instagram", "facebook"]
         manifest = {a["id"]: a for a in sel.cargar_manifest(self.config)["assets"]}
         vistos = set()
         for i in range(7):
@@ -139,6 +140,7 @@ class Registro(Base):
             self.assertEqual(d["PUBLICAR_FACEBOOK"], "true")
 
     def test_story_y_tiktok_tienen_su_propia_clave(self):
+        self.config["canales_story"] = ["instagram", "facebook"]
         sel.registrar("las3yemas_20261003", "L3Y-20261003-08", "instagram_story", LUNES, "publicado", "9",
                       ruta=self.registro)
         self.registrar("tiktok", "desconocido")
