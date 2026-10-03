@@ -9,6 +9,10 @@ Subcomandos:
   elegir      [--fecha AAAA-MM-DD] [--github-output]
   registrar   --canal C --estado E [--remote-id ID] [--detalle TXT] --asset A --fecha F
   calendario  [--desde AAAA-MM-DD] [--dias 7] [--forzar-activa]
+  reel        --asset ID_PORTADA [--fecha AAAA-MM-DD] [--github-output]   (lo usa reels.yml)
+
+Canales del registro: instagram, facebook, instagram_story, facebook_story,
+tiktok (borrador en la bandeja de TikTok) e instagram_reel.
 """
 import argparse
 import datetime as dt
@@ -117,8 +121,13 @@ def elegir(fecha, config=None, ruta_registro=REGISTRO, forzar_activa=False):
             "CAMPANA": "",
             "ASSET_ID": "",
             "STORY": "",
+            "STORY_ID": "",
+            "TIKTOK_IMAGEN": "",
             "PUBLICAR_INSTAGRAM": "true",
             "PUBLICAR_FACEBOOK": "true",
+            "PUBLICAR_STORY_INSTAGRAM": "false",
+            "PUBLICAR_STORY_FACEBOOK": "false",
+            "PUBLICAR_TIKTOK": "true",
         }
 
     manifest = cargar_manifest(config)
@@ -143,13 +152,58 @@ def elegir(fecha, config=None, ruta_registro=REGISTRO, forzar_activa=False):
         "CAMPANA": campana,
         "ASSET_ID": feed["id"],
         "STORY": ruta_asset(config, story),
+        "STORY_ID": story["id"],
+        "TIKTOK_IMAGEN": ruta_tiktok(config, feed),
     }
+
+    def libre(asset_id, canal):
+        previo = estados.get(clave(campana, asset_id, canal, fecha))
+        return previo is None or previo["estado"] not in BLOQUEAN
+
+    def bandera(ok):
+        return "true" if ok else "false"
+
     for canal in ("instagram", "facebook"):
-        previo = estados.get(clave(campana, feed["id"], canal, fecha))
         habilitado = canal in config.get("canales_feed", [])
-        libre = previo is None or previo["estado"] not in BLOQUEAN
-        salida[f"PUBLICAR_{canal.upper()}"] = "true" if habilitado and libre else "false"
+        salida[f"PUBLICAR_{canal.upper()}"] = bandera(habilitado and libre(feed["id"], canal))
+        habilitado = canal in config.get("canales_story", [])
+        salida[f"PUBLICAR_STORY_{canal.upper()}"] = bandera(habilitado and libre(story["id"], f"{canal}_story"))
+    # TikTok: el servidor de Render publica la imagen que se le pida (JPG).
+    salida["PUBLICAR_TIKTOK"] = bandera(libre(feed["id"], "tiktok"))
     return salida
+
+
+def ruta_tiktok(config, asset):
+    """JPG equivalente (TikTok foto no acepta PNG)."""
+    jpg = carpeta_campana(config) / "07_TikTok_JPG" / (Path(asset["file"]).stem + ".jpg")
+    if not jpg.is_file():
+        raise FileNotFoundError(f"Falta el JPG para TikTok: {jpg}")
+    return jpg.relative_to(RAIZ).as_posix()
+
+
+def preparar_reel(asset_id, fecha, config=None, ruta_registro=REGISTRO):
+    """Datos para publicar un Reel con su portada. Solo con vídeo real aprobado."""
+    config = config or cargar_config()
+    manifest = cargar_manifest(config)
+    portada = next((a for a in manifest["assets"] if a["id"] == asset_id), None)
+    if portada is None or portada["type"] != "reel_cover":
+        raise ValueError(f"{asset_id} no es una portada de Reel")
+    datos = config.get("portadas_reels", {}).get(asset_id, {})
+    video = datos.get("video")
+    if not video or not datos.get("aprobado"):
+        raise ValueError(f"{asset_id}: falta vídeo aprobado (video + aprobado=true en campana-activa.json)")
+    ruta_video = RAIZ / video
+    if not ruta_video.is_file() or ruta_video.suffix.lower() != ".mp4":
+        raise ValueError(f"{asset_id}: el vídeo {video} no existe o no es MP4")
+    previo = leer_registro(ruta_registro).get(clave(config["campana_id"], asset_id, "instagram_reel", fecha))
+    return {
+        "FECHA_LOCAL": fecha.isoformat(),
+        "ASSET_ID": asset_id,
+        "VIDEO": ruta_video.relative_to(RAIZ).as_posix(),
+        "PORTADA": ruta_asset(config, portada),
+        "CAPTION": datos.get("caption") or portada["caption"],
+        "PUBLICAR_REEL": "true" if previo is None or previo["estado"] not in BLOQUEAN else "false",
+    }
 
 
 def escribir_github_output(datos):
@@ -182,12 +236,17 @@ def main(argv=None):
     c.add_argument("--dias", type=int, default=7)
     c.add_argument("--forzar-activa", action="store_true")
 
+    rl = sub.add_parser("reel")
+    rl.add_argument("--asset", required=True)
+    rl.add_argument("--fecha")
+    rl.add_argument("--github-output", action="store_true")
+
     a = p.parse_args(argv)
     config = cargar_config()
 
-    if a.cmd == "elegir":
+    if a.cmd in ("elegir", "reel"):
         fecha = dt.date.fromisoformat(a.fecha) if a.fecha else fecha_local(zona=config["zona_horaria"])
-        datos = elegir(fecha, config)
+        datos = elegir(fecha, config) if a.cmd == "elegir" else preparar_reel(a.asset, fecha, config)
         if a.github_output:
             escribir_github_output(datos)
         for k, v in datos.items():
@@ -202,7 +261,9 @@ def main(argv=None):
             f = desde + dt.timedelta(days=i)
             d = elegir(f, config, forzar_activa=a.forzar_activa)
             print(f"{f.isoformat()} {f.strftime('%a')} {d['MODO']:9} feed={d['IMAGEN']} "
-                  f"story={d['STORY'] or '-'} IG={d['PUBLICAR_INSTAGRAM']} FB={d['PUBLICAR_FACEBOOK']}")
+                  f"story={d['STORY'] or '-'} IG={d['PUBLICAR_INSTAGRAM']} FB={d['PUBLICAR_FACEBOOK']} "
+                  f"storyIG={d['PUBLICAR_STORY_INSTAGRAM']} storyFB={d['PUBLICAR_STORY_FACEBOOK']} "
+                  f"tiktok={d['TIKTOK_IMAGEN'] or 'imagen del servidor'}")
 
 
 if __name__ == "__main__":

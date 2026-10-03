@@ -298,6 +298,24 @@ async function getValidAccessToken() {
 // endpoint automático que llama GitHub Actions)
 // ---------------------------------------------------------------------------
 
+// Imágenes que GitHub Actions puede pedir publicar (p. ej. una campaña).
+// Solo se aceptan JPG de la propia web de GitHub Pages, que TikTok ya tiene
+// verificada; cualquier otra cosa se ignora y se usa la imagen del día.
+const IMAGE_URL_PREFIX = "https://las3yemas-glitch.github.io/las3yemas/";
+
+function requestedImageUrl(body) {
+  const url = typeof body?.imageUrl === "string" ? body.imageUrl.trim() : "";
+  if (!url.startsWith(IMAGE_URL_PREFIX) || !/\.jpe?g$/i.test(url) || url.includes("..")) {
+    return null;
+  }
+  return url;
+}
+
+function requestedCaption(body) {
+  const caption = typeof body?.caption === "string" ? body.caption.trim() : "";
+  return caption && caption.length <= 2000 ? caption : null;
+}
+
 function getTodayImageUrl() {
   const dia = new Date().getUTCDay(); // 0 = domingo ... 6 = sábado
   const isoDay = dia === 0 ? 7 : dia; // 1 = lunes ... 7 = domingo
@@ -305,7 +323,7 @@ function getTodayImageUrl() {
   return `https://las3yemas-glitch.github.io/las3yemas/publicidad/${filename}`;
 }
 
-async function publishToTikTok({ imageUrl, privacyLevel }) {
+async function publishToTikTok({ imageUrl, privacyLevel, description = CAPTION }) {
   const accessToken = await getValidAccessToken();
 
   if (POST_MODE === "DIRECT_POST") {
@@ -351,14 +369,14 @@ async function publishToTikTok({ imageUrl, privacyLevel }) {
           POST_MODE === "DIRECT_POST"
             ? {
                 title: "Huevos frescos Las 3 Yemas 🥚",
-                description: CAPTION,
+                description,
                 privacy_level: privacyLevel,
                 disable_comment: false,
                 auto_add_music: true,
               }
             : {
                 title: "Huevos frescos Las 3 Yemas 🥚",
-                description: CAPTION,
+                description,
               },
         source_info: {
           source: "PULL_FROM_URL",
@@ -454,6 +472,7 @@ app.get("/tiktok/status", async (req, res) => {
     lastPersistOk,
     lastPersistError,
     todayImageUrl: getTodayImageUrl(),
+    acceptsRequestedImage: true,
     privacyLevel: PRIVACY_LEVEL,
     postMode: POST_MODE,
   });
@@ -592,10 +611,11 @@ app.get("/tiktok/last-status", async (req, res) => {
 // Requiere el header Authorization: Bearer <TIKTOK_AUTOMATION_SECRET>.
 app.post("/tiktok/publish", requireAutomationSecret, async (req, res) => {
   try {
-    const imageUrl = getTodayImageUrl();
+    const imageUrl = requestedImageUrl(req.body) || getTodayImageUrl();
     const result = await publishToTikTok({
       imageUrl,
       privacyLevel: PRIVACY_LEVEL,
+      description: requestedCaption(req.body) || CAPTION,
     });
 
     res.json({

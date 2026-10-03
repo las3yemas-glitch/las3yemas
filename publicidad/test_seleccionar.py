@@ -71,6 +71,13 @@ class Seleccion(Base):
             self.assertEqual(Path(d["IMAGEN"]).name[:2], Path(d["STORY"]).name[:2])
             self.assertIn("/02_Stories/", d["STORY"])
             self.assertEqual(d["CAPTION"], feed["caption"])
+            self.assertEqual(manifest[d["STORY_ID"]]["type"], "story")
+            self.assertEqual(manifest[d["STORY_ID"]]["day"], f.isoweekday())
+            self.assertEqual((d["PUBLICAR_STORY_INSTAGRAM"], d["PUBLICAR_STORY_FACEBOOK"]), ("true", "true"))
+            jpg = RAIZ / d["TIKTOK_IMAGEN"]
+            self.assertTrue(jpg.is_file())
+            self.assertEqual(jpg.stem, Path(d["IMAGEN"]).stem)
+            self.assertEqual(jpg.read_bytes()[:3], b"\xff\xd8\xff")
             vistos.add(d["ASSET_ID"])
         self.assertEqual(len(vistos), 7)
 
@@ -97,6 +104,9 @@ class Seleccion(Base):
             self.assertEqual(d["IMAGEN"], f"publicidad/{f.isoweekday():02d}_semana.png")
             self.assertEqual(d["CAPTION"], LEYENDA_ANTERIOR)
             self.assertEqual((d["PUBLICAR_INSTAGRAM"], d["PUBLICAR_FACEBOOK"]), ("true", "true"))
+            # Sin campaña: sin Stories y TikTok con la imagen del servidor.
+            self.assertEqual((d["PUBLICAR_STORY_INSTAGRAM"], d["PUBLICAR_STORY_FACEBOOK"]), ("false", "false"))
+            self.assertEqual((d["PUBLICAR_TIKTOK"], d["TIKTOK_IMAGEN"]), ("true", ""))
 
     def test_fuera_de_rango_vuelve_a_historico(self):
         self.config["activa"] = True
@@ -128,6 +138,16 @@ class Registro(Base):
             self.assertEqual(d["PUBLICAR_INSTAGRAM"], esperado, estado)
             self.assertEqual(d["PUBLICAR_FACEBOOK"], "true")
 
+    def test_story_y_tiktok_tienen_su_propia_clave(self):
+        sel.registrar("las3yemas_20261003", "L3Y-20261003-08", "instagram_story", LUNES, "publicado", "9",
+                      ruta=self.registro)
+        self.registrar("tiktok", "desconocido")
+        d = self.elegir(LUNES, forzar_activa=True)
+        self.assertEqual(d["PUBLICAR_STORY_INSTAGRAM"], "false")
+        self.assertEqual(d["PUBLICAR_STORY_FACEBOOK"], "true")
+        self.assertEqual(d["PUBLICAR_TIKTOK"], "false")
+        self.assertEqual(d["PUBLICAR_INSTAGRAM"], "true")
+
     def test_publicado_exige_id_remoto(self):
         with self.assertRaises(ValueError):
             self.registrar("instagram", "publicado")
@@ -136,6 +156,43 @@ class Registro(Base):
         self.registrar("instagram", "publicado", "123")
         martes = self.elegir(LUNES + dt.timedelta(days=1), forzar_activa=True)
         self.assertEqual(martes["PUBLICAR_INSTAGRAM"], "true")
+
+
+class Reels(Base):
+    def setUp(self):
+        super().setUp()
+        self.video = RAIZ / "publicidad/_prueba_reel.mp4"
+
+    def tearDown(self):
+        self.video.unlink(missing_ok=True)
+        super().tearDown()
+
+    def test_sin_video_aprobado_no_hay_reel(self):
+        for asset in ("L3Y-20261003-15", "L3Y-20261003-16", "L3Y-20261003-17"):
+            with self.assertRaises(ValueError):
+                sel.preparar_reel(asset, LUNES, self.config, self.registro)
+        self.video.write_bytes(b"\x00\x00\x00\x18ftypmp42")
+        self.config["portadas_reels"]["L3Y-20261003-15"].update(video="publicidad/_prueba_reel.mp4")
+        with self.assertRaises(ValueError):  # falta aprobado=true
+            sel.preparar_reel("L3Y-20261003-15", LUNES, self.config, self.registro)
+
+    def test_portada_con_video_aprobado(self):
+        self.video.write_bytes(b"\x00\x00\x00\x18ftypmp42")
+        self.config["portadas_reels"]["L3Y-20261003-16"].update(video="publicidad/_prueba_reel.mp4", aprobado=True)
+        d = sel.preparar_reel("L3Y-20261003-16", LUNES, self.config, self.registro)
+        self.assertEqual(d["VIDEO"], "publicidad/_prueba_reel.mp4")
+        self.assertIn("03_Portadas_Reels/02_el_desayuno", d["PORTADA"])
+        self.assertEqual(d["PUBLICAR_REEL"], "true")
+        sel.registrar("las3yemas_20261003", "L3Y-20261003-16", "instagram_reel", LUNES, "en_curso",
+                      ruta=self.registro)
+        d = sel.preparar_reel("L3Y-20261003-16", LUNES, self.config, self.registro)
+        self.assertEqual(d["PUBLICAR_REEL"], "false")
+
+    def test_solo_portadas(self):
+        self.video.write_bytes(b"x")
+        self.config["portadas_reels"]["L3Y-20261003-01"] = {"video": "publicidad/_prueba_reel.mp4", "aprobado": True}
+        with self.assertRaises(ValueError):
+            sel.preparar_reel("L3Y-20261003-01", LUNES, self.config, self.registro)
 
 
 class FlujoCLI(Base):
@@ -190,8 +247,9 @@ class Workflows(unittest.TestCase):
         self.assertNotIn("schedule", marketing)
         diaria = (wf / "publicidad-diaria.yml").read_text(encoding="utf-8")
         self.assertIn('cron: "0 13 * * *"', diaria)
-        self.assertNotIn("STORIES", diaria)
         self.assertNotIn("media_type=REELS", diaria)
+        reels = (wf / "reels.yml").read_text(encoding="utf-8")
+        self.assertNotIn("schedule", reels)  # Reels solo a mano
 
     def test_selector_sin_red(self):
         fuente = (RAIZ / "publicidad/seleccionar.py").read_text(encoding="utf-8")

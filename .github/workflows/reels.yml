@@ -1,0 +1,139 @@
+name: Reel Las 3 Yemas
+
+# Solo manual. Publica en Instagram un Reel con vídeo real y su portada de
+# campaña. Requiere en publicidad/campana-activa.json, para esa portada:
+#   "video": "ruta/al/video.mp4" (subido al repo) y "aprobado": true
+on:
+  workflow_dispatch:
+    inputs:
+      portada:
+        description: "Portada (L3Y-20261003-15 sonido, -16 desayuno, -17 misión)"
+        required: true
+        type: choice
+        options:
+          - L3Y-20261003-15
+          - L3Y-20261003-16
+          - L3Y-20261003-17
+
+permissions:
+  contents: write
+
+jobs:
+  reel:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Comprobar vídeo aprobado
+        id: reel
+        env:
+          PORTADA: ${{ inputs.portada }}
+        run: |
+          python3 publicidad/seleccionar.py reel --asset "$PORTADA" --github-output
+          if grep -q "PUBLICAR_REEL=false" "$GITHUB_OUTPUT"; then
+            echo "Este Reel ya figura publicado, en curso o con resultado desconocido hoy. Revisa Instagram antes de reintentar."
+            exit 1
+          fi
+
+      - name: Preparar archivos públicos
+        id: preparar
+        run: |
+          cp "${{ steps.reel.outputs.VIDEO }}" "publicidad/reel-${GITHUB_RUN_ID}.mp4"
+          cp "${{ steps.reel.outputs.PORTADA }}" "publicidad/reel-${GITHUB_RUN_ID}.png"
+          python3 publicidad/seleccionar.py registrar --canal instagram_reel --estado en_curso \
+            --asset "${{ steps.reel.outputs.ASSET_ID }}" --fecha "${{ steps.reel.outputs.FECHA_LOCAL }}"
+          git config user.name "Las 3 Yemas Bot"
+          git config user.email "bot@las3yemas.cl"
+          git add "publicidad/reel-${GITHUB_RUN_ID}.mp4" "publicidad/reel-${GITHUB_RUN_ID}.png" publicidad/registro-publicaciones.jsonl
+          git commit -m "Reel Las 3 Yemas"
+          git push
+
+      - name: Esperar archivos públicos
+        run: |
+          for EXT in mp4 png; do
+            URL="https://las3yemas-glitch.github.io/las3yemas/publicidad/reel-${GITHUB_RUN_ID}.${EXT}"
+            for i in {1..40}; do
+              STATUS=$(curl -L -s -o /dev/null -w "%{http_code}" "$URL")
+              echo "$EXT intento $i: HTTP $STATUS"
+              [ "$STATUS" = "200" ] && break
+              [ "$i" = "40" ] && exit 1
+              sleep 5
+            done
+          done
+
+      - name: Publicar Reel en Instagram
+        id: instagram
+        env:
+          ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          CAPTION: ${{ steps.reel.outputs.CAPTION }}
+        run: |
+          BASE="https://las3yemas-glitch.github.io/las3yemas/publicidad/reel-${GITHUB_RUN_ID}"
+          IG_USER_ID=$(curl -s \
+            "https://graph.instagram.com/me?fields=id&access_token=${ACCESS_TOKEN}" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
+          if [ -z "$IG_USER_ID" ]; then
+            echo "ESTADO=fallido" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          RESPONSE=$(curl -s -X POST \
+            "https://graph.instagram.com/${IG_USER_ID}/media" \
+            -d "media_type=REELS" \
+            -d "video_url=${BASE}.mp4" \
+            -d "cover_url=${BASE}.png" \
+            --data-urlencode "caption=${CAPTION}" \
+            -d "access_token=${ACCESS_TOKEN}")
+          echo "$RESPONSE"
+          CREATION_ID=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
+          if [ -z "$CREATION_ID" ]; then
+            echo "ESTADO=fallido" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          # Instagram procesa el vídeo antes de permitir publicarlo.
+          for i in {1..40}; do
+            ESTADO_IG=$(curl -s "https://graph.instagram.com/${CREATION_ID}?fields=status_code&access_token=${ACCESS_TOKEN}" \
+              | python3 -c "import sys,json; print(json.load(sys.stdin).get('status_code',''))")
+            echo "Procesando ($i): $ESTADO_IG"
+            [ "$ESTADO_IG" = "FINISHED" ] && break
+            if [ "$ESTADO_IG" = "ERROR" ] || [ "$i" = "40" ]; then
+              echo "ESTADO=fallido" >> "$GITHUB_OUTPUT"
+              exit 1
+            fi
+            sleep 15
+          done
+
+          PUBLISH_RESPONSE=$(curl -s -X POST \
+            "https://graph.instagram.com/${IG_USER_ID}/media_publish" \
+            -d "creation_id=${CREATION_ID}" \
+            -d "access_token=${ACCESS_TOKEN}")
+          echo "$PUBLISH_RESPONSE"
+          PUBLISH_ID=$(echo "$PUBLISH_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))")
+          if [ -z "$PUBLISH_ID" ]; then
+            echo "ESTADO=desconocido" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "ESTADO=publicado" >> "$GITHUB_OUTPUT"
+          echo "REMOTE_ID=$PUBLISH_ID" >> "$GITHUB_OUTPUT"
+          echo "REEL PUBLICADO CORRECTAMENTE"
+
+      - name: Registrar resultado
+        # Solo si quedó registrado "en_curso" (archivos preparados y subidos).
+        if: always() && steps.preparar.outcome == 'success'
+        run: |
+          ESTADO="${{ steps.instagram.outputs.ESTADO }}"
+          RID="${{ steps.instagram.outputs.REMOTE_ID }}"
+          if [ "${{ steps.instagram.outcome }}" = "skipped" ]; then ESTADO="fallido"; fi
+          ESTADO="${ESTADO:-desconocido}"
+          if [ "$ESTADO" = "publicado" ] && [ -z "$RID" ]; then ESTADO="desconocido"; fi
+          python3 publicidad/seleccionar.py registrar --canal instagram_reel --estado "$ESTADO" \
+            --remote-id "$RID" --detalle "outcome=${{ steps.instagram.outcome }}" \
+            --asset "${{ steps.reel.outputs.ASSET_ID }}" --fecha "${{ steps.reel.outputs.FECHA_LOCAL }}"
+          git config user.name "Las 3 Yemas Bot"
+          git config user.email "bot@las3yemas.cl"
+          git add publicidad/registro-publicaciones.jsonl
+          git commit -m "Registro Reel ${{ steps.reel.outputs.FECHA_LOCAL }}" || exit 0
+          git pull --rebase -q || true
+          git push

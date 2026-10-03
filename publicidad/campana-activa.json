@@ -6,15 +6,16 @@
   "fecha_inicio": "2026-10-05",
   "fecha_fin": "2026-10-11",
   "canales_feed": ["instagram", "facebook"],
+  "canales_story": ["instagram", "facebook"],
   "sustituciones": {},
-  "bloqueos": {
-    "story": "El workflow solo publica en el Feed (graph.instagram.com/media sin media_type=STORIES y Facebook /photos). Stories no está implementado ni tiene permisos comprobados: las 7 piezas quedan preparadas.",
-    "reel_cover": "Portadas PNG pendientes de vídeo real aprobado. Nunca se publican como Reel ni TikTok.",
-    "tiktok": "server.js (Render) elige su propia imagen 0N_semana.jpg y TikTok foto exige JPG; la campaña no se envía a TikTok sin cambio y redeploy aprobados."
+  "notas": {
+    "story": "Stories IG (media_type=STORIES) y Facebook (photo_stories) en pasos aparte con continue-on-error: si falta permiso, el Feed no se ve afectado y queda 'fallido' en el registro.",
+    "reel_cover": "Portadas PNG. Se publican solo como portada de un Reel real con .github/workflows/reels.yml (manual) cuando 'video' apunte a un MP4 del repo y 'aprobado' sea true.",
+    "tiktok": "El workflow envía a Render el JPG de 07_TikTok_JPG; si el servidor aún no tiene esa versión, usa su imagen 0N_semana.jpg de siempre."
   },
   "portadas_reels": {
-    "L3Y-20261003-15": {"estado": "pendiente_video", "video": null},
-    "L3Y-20261003-16": {"estado": "pendiente_video", "video": null},
-    "L3Y-20261003-17": {"estado": "pendiente_video", "video": null}
+    "L3Y-20261003-15": {"estado": "pendiente_video", "video": null, "aprobado": false},
+    "L3Y-20261003-16": {"estado": "pendiente_video", "video": null, "aprobado": false},
+    "L3Y-20261003-17": {"estado": "pendiente_video", "video": null, "aprobado": false}
   }
 }

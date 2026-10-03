@@ -8,11 +8,12 @@ Fuera de esas fechas, o con `"activa": false`, el workflow publica exactamente l
 
 | Canal | Quién decide la pieza | Formato | Campaña |
 |---|---|---|---|
-| Instagram Feed | `publicidad-diaria.yml` → `publicidad/seleccionar.py` | PNG por URL de GitHub Pages | Sí, al activar |
-| Facebook Página | `publicidad-diaria.yml` → `publicidad/seleccionar.py` | PNG por URL de GitHub Pages | Sí, al activar |
-| TikTok | `server.js` en Render (`0N_semana.jpg`, borrador MEDIA_UPLOAD) | JPG | No (sin cambios) |
-| Stories IG/FB | — | — | Bloqueado |
-| Reels | — | — | Portadas pendientes de vídeo |
+| Instagram Feed | `publicidad-diaria.yml` → `publicidad/seleccionar.py` | PNG por URL de GitHub Pages | Sí |
+| Facebook Página | `publicidad-diaria.yml` → `publicidad/seleccionar.py` | PNG por URL de GitHub Pages | Sí |
+| Story Instagram | `publicidad-diaria.yml` (`media_type=STORIES`) | PNG 1080×1920 | Sí (permiso por comprobar en la 1.ª ejecución) |
+| Story Facebook | `publicidad-diaria.yml` (`/photo_stories`) | PNG 1080×1920 | Sí (permiso por comprobar en la 1.ª ejecución) |
+| TikTok | el workflow pide a `server.js` (Render) el JPG de `07_TikTok_JPG/` | JPG, borrador MEDIA_UPLOAD | Sí, cuando Render despliegue la nueva versión |
+| Reels Instagram | `reels.yml` (solo manual) | MP4 real + portada PNG | Cuando haya vídeo aprobado |
 
 `marketing.yml` solo imprime un texto (dispatch manual); `github/workflows/marketing.yml` está fuera de `.github` y no se ejecuta. Ninguno publica.
 
@@ -20,7 +21,7 @@ Fuera de esas fechas, o con `"activa": false`, el workflow publica exactamente l
 
 Cron sin cambios: `0 13 * * *` = 10:00 America/Santiago (UTC−3, horario de verano). El día se calcula en hora de Chile.
 
-| Fecha | Feed (IG + FB) | Story (preparada, bloqueada) |
+| Fecha | Feed (IG + FB + borrador TikTok) | Story (IG + FB) |
 |---|---|---|
 | lun 2026-10-05 | L3Y-20261003-01 Frescura que llega a tu mesa | L3Y-20261003-08 |
 | mar 2026-10-06 | L3Y-20261003-02 Así empiezan los buenos días | L3Y-20261003-09 |
@@ -35,18 +36,18 @@ Fuera de ese rango vuelve sola la rotación anterior. Leyendas: las del `manifes
 - **Extras** L3Y-20261003-18/19: reserva. Solo salen si se agrega una sustitución explícita, p. ej. `"sustituciones": {"2026-10-07": "L3Y-20261003-18"}`. Nunca suman publicaciones.
 - **Portadas** L3Y-20261003-15/16/17: `pendiente_video` en `campana-activa.json`. El selector no las elige.
 
-## Bloqueos
+## Riesgos y pendientes
 
-1. **Stories**: el workflow solo llama a `graph.instagram.com/<id>/media` sin `media_type=STORIES` y a Facebook `/photos`. No hay implementación ni permiso comprobado para Stories. Las 7 piezas están listas en `02_Stories/`.
-2. **Reels**: no hay MP4. Las portadas esperan vídeo real aprobado (guiones en `05_Claude/INSTRUCCIONES_CLAUDE.md`).
-3. **TikTok**: lo controla `server.js` en Render, con su propia selección por día UTC y JPG. Llevar la campaña a TikTok exige derivados JPG, cambio en `server.js` y redeploy aprobados. El registro de duplicados no cubre TikTok: un dispatch manual repetido vuelve a enviar un borrador.
+1. **Stories**: nunca se han probado con estas cuentas. Si el token no tiene permiso, solo falla ese paso (continue-on-error), el Feed sigue y el registro queda `fallido` (se reintenta en la siguiente ejecución manual del mismo día).
+2. **Reels**: no hay MP4. Para publicar uno: subir el vídeo al repo (p. ej. `assets/campaigns/las3yemas_20261003/08_Reels_MP4/01_sonido_de_la_frescura.mp4`), poner en `publicidad/campana-activa.json` → `portadas_reels.<ID>`: `"video": "<ruta>"`, `"aprobado": true`, y lanzar **Actions → Reel Las 3 Yemas → Run workflow** eligiendo la portada. Guiones en `05_Claude/INSTRUCCIONES_CLAUDE.md`.
+3. **TikTok**: `07_TikTok_JPG/` son los mismos PNG del Feed/Extras convertidos a JPG (calidad 95, mismo tamaño). Si Render aún no desplegó el nuevo `server.js`, ignora la imagen pedida y manda su `0N_semana.jpg` (comprobar `acceptsRequestedImage: true` en `/tiktok/status`). Sigue siendo borrador: hay que publicarlo desde la app.
 4. **Concurrencia**: el workflow no tiene `concurrency` (se respetó). Dos ejecuciones simultáneas podrían elegir antes de que una registre `en_curso`; en la práctica el segundo `git push` falla y detiene esa ejecución antes de publicar.
 5. Facebook y TikTok tienen `continue-on-error`: un “success” en GitHub no prueba que se publicaron. Instagram sí corta el job si falla.
 
 ## Registro de publicaciones
 
 `publicidad/registro-publicaciones.jsonl` (commit en el repo, no en el runner).
-Clave: `campaña|asset|canal|fecha local`. Estados: `preparado`, `en_curso`, `publicado` (exige ID remoto), `fallido`, `desconocido`.
+Clave: `campaña|asset|canal|fecha local`; canales `instagram`, `facebook`, `instagram_story`, `facebook_story`, `tiktok`, `instagram_reel`. Estados: `preparado`, `en_curso`, `publicado` (exige ID remoto), `fallido`, `desconocido`.
 `en_curso`, `publicado` y `desconocido` bloquean otro intento ese día. Ante `desconocido`/`en_curso`: revisar Instagram/Facebook a mano; si no se publicó, agregar una línea `fallido` con `python3 publicidad/seleccionar.py registrar ... --estado fallido` antes de relanzar.
 
 ## Activar (paso separado, requiere aprobación)
