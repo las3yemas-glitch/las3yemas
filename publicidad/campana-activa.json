@@ -1,0 +1,20 @@
+{
+  "campana_id": "las3yemas_20261003",
+  "manifest": "assets/campaigns/las3yemas_20261003/05_Claude/manifest.json",
+  "activa": false,
+  "zona_horaria": "America/Santiago",
+  "fecha_inicio": "2026-10-05",
+  "fecha_fin": "2026-10-11",
+  "canales_feed": ["instagram", "facebook"],
+  "sustituciones": {},
+  "bloqueos": {
+    "story": "El workflow solo publica en el Feed (graph.instagram.com/media sin media_type=STORIES y Facebook /photos). Stories no está implementado ni tiene permisos comprobados: las 7 piezas quedan preparadas.",
+    "reel_cover": "Portadas PNG pendientes de vídeo real aprobado. Nunca se publican como Reel ni TikTok.",
+    "tiktok": "server.js (Render) elige su propia imagen 0N_semana.jpg y TikTok foto exige JPG; la campaña no se envía a TikTok sin cambio y redeploy aprobados."
+  },
+  "portadas_reels": {
+    "L3Y-20261003-15": {"estado": "pendiente_video", "video": null},
+    "L3Y-20261003-16": {"estado": "pendiente_video", "video": null},
+    "L3Y-20261003-17": {"estado": "pendiente_video", "video": null}
+  }
+}
